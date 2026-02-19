@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Vérifie que l'utilisateur est authentifié
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() && 
+        exists(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isGestionnaire() {
+      return isAuth() && 
+        exists(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)) && 
+        (get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'admin' || 
+         get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'gestionnaire');
+    }
+
+    function isVendeur() {
+      return isAuth() && 
+        exists(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)) && 
+        (get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'admin' || 
+         get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'gestionnaire' ||
+         get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'vendeur');
+    }
+
+    // ── Produits ──
+    match /produits/{id} {
+      allow read: if isAuth();
+      allow create, update: if isGestionnaire();
+      allow delete: if isAdmin();
+    }
+
+    // ── Mouvements ──
+    match /mouvements/{id} {
+      allow read: if isAuth();
+      allow create: if isGestionnaire();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Catégories ──
+    match /categories/{id} {
+      allow read: if isAuth();
+      allow write: if isGestionnaire();
+    }
+
+    // ── Unités ──
+    match /unites/{id} {
+      allow read: if isAuth();
+      allow write: if isGestionnaire();
+    }
+
+    // ── Configurations (Établissement) ──
+    match /configurations/{id} {
+      allow read: if isAuth();
+      allow write: if isGestionnaire();
+    }
+
+    // ── Fournisseurs ──
+    match /fournisseurs/{id} {
+      allow read: if isAuth();
+      allow write: if isGestionnaire();
+    }
+
+    // ── Utilisateurs ──
+    match /utilisateurs/{uid} {
+      allow read: if true; // Permettre la lecture pour le Setup Wizard et la vérification de compte
+      allow create: if isAuth() && (request.auth.uid == uid || request.auth.uid == 'fGg7Dp0KiGWiJqTOCKp8XmtEsQI3'); // DEBUG: Hardcoded admin check
+      allow update: if isAuth() && (request.auth.uid == uid || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ── Clients ──
+    match /clients/{id} {
+      allow read: if isAuth();
+      allow write: if isVendeur();
+    }
+
+    // ── Ventes ──
+    match /ventes/{id} {
+      allow read: if isAuth();
+      allow create: if isVendeur();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Commandes Fournisseurs ──
+    match /commandes_fournisseurs/{id} {
+      allow read, create, update: if isGestionnaire();
+      allow delete: if isAdmin();
+    }
+
+    // ── Audit Logs ──
+    match /audit_logs/{id} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // ── Clôtures de Caisse ──
+    match /clotures_caisse/{id} {
+      allow read: if isGestionnaire();
+      allow create: if isVendeur();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Inventaires ──
+    match /inventaires/{id} {
+      allow read: if isGestionnaire();
+      allow create, update: if isGestionnaire();
+      allow delete: if isAdmin();
+    }
+  }
+}

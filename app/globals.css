@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: "Inter", sans-serif;
+  }
+
+  body {
+    @apply bg-cream text-ink;
+  }
+
+  * {
+    @apply border-cream-dark;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-gold text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gold-light transition-colors;
+  }
+
+  .btn-secondary {
+    @apply bg-cream-dark text-ink px-4 py-2 rounded-lg text-sm font-medium hover:bg-cream transition-colors;
+  }
+
+  .btn-danger {
+    @apply bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-xl border border-cream-dark p-5;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 rounded-lg border border-cream-dark bg-white text-sm focus:outline-none focus:border-gold transition-colors;
+  }
+
+  .label {
+    @apply block text-xs font-mono uppercase tracking-wider text-ink-muted mb-1.5;
+  }
+
+  .badge-alerte {
+    @apply bg-red-50 text-red-600 text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+
+  .badge-ok {
+    @apply bg-green-50 text-green-600 text-xs px-2 py-0.5 rounded-full font-medium;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-white/10 rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-white/20;
+  }
+}
