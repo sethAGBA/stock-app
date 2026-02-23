@@ -16,7 +16,7 @@ import clsx from "clsx";
 import { formatPrice, formatCurrency } from "@/lib/format";
 
 export default function HistoriqueVentesPage() {
-    const { appUser } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [ventes, setVentes] = useState<Vente[]>([]);
     const [search, setSearch] = useState("");
     const [etablissement, setEtablissement] = useState<Etablissement | null>(null);
@@ -30,12 +30,13 @@ export default function HistoriqueVentesPage() {
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
 
     useEffect(() => {
-        ventesService.getRecent(100).then(setVentes);
+        if (!appUser) return;
+        ventesService.getRecent(100, currentMagasinId).then(setVentes);
         etablissementService.get().then(setEtablissement);
         if (isGestionnaire) {
-            utilisateursService.getAll().then(setVendeurs);
+            utilisateursService.getAll(currentMagasinId).then(setVendeurs);
         }
-    }, [isGestionnaire]);
+    }, [isGestionnaire, currentMagasinId, appUser]);
 
     const filteredVentes = ventes.filter(v => {
         const matchesSearch = v.id.includes(search) ||
@@ -97,7 +98,7 @@ export default function HistoriqueVentesPage() {
             await ventesService.annuler(venteToCancel, motif, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` });
             toast.success("Vente annulée avec succès");
             // Rafraîchir la liste
-            const updated = await ventesService.getRecent(100);
+            const updated = await ventesService.getRecent(100, currentMagasinId);
             setVentes(updated);
         } catch (err: any) {
             toast.error(err.message || "Erreur lors de l'annulation");

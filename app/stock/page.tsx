@@ -12,7 +12,7 @@ import toast from "react-hot-toast";
 import clsx from "clsx";
 
 export default function StockPage() {
-  const { appUser } = useAuth();
+  const { appUser, currentMagasinId } = useAuth();
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [produits, setProduits] = useState<Produit[]>([]);
   const [showModal, setShowModal] = useState(false);
@@ -25,10 +25,11 @@ export default function StockPage() {
   });
 
   useEffect(() => {
-    const unsubM = mouvementsService.onSnapshot(setMouvements);
-    const unsubP = produitsService.onSnapshot(setProduits);
+    if (!appUser) return;
+    const unsubM = mouvementsService.onSnapshot(setMouvements, currentMagasinId);
+    const unsubP = produitsService.onSnapshot(setProduits, currentMagasinId);
     return () => { unsubM(); unsubP(); };
-  }, []);
+  }, [appUser, currentMagasinId]);
 
   const filtered = mouvements.filter(m => filtre === "tous" || m.type === filtre);
 

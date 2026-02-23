@@ -15,7 +15,7 @@ import { formatPrice, formatCurrency } from "@/lib/format";
 const Scanner = dynamic(() => import("@/components/common/Scanner"), { ssr: false });
 
 export default function ProduitsPage() {
-  const { appUser } = useAuth();
+  const { appUser, currentMagasinId } = useAuth();
   const [produits, setProduits] = useState<Produit[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
@@ -41,12 +41,16 @@ export default function ProduitsPage() {
 
   useEffect(() => {
     if (!appUser) return;
-    const unsub = produitsService.onSnapshot(setProduits);
+    // Pour les non-admins, on attend d'avoir un magasinId avant de souscrire
+    // pour éviter l'erreur de permission sur la requête globale.
+    if (appUser.role !== "admin" && !currentMagasinId) return;
+
+    const unsub = produitsService.onSnapshot(setProduits, currentMagasinId);
     categoriesService.getAll().then(setCategories);
     fournisseursService.getAll().then(setFournisseurs);
     unitesService.getAll().then(setUnites);
     return unsub;
-  }, [appUser]);
+  }, [appUser, currentMagasinId]);
 
   const handleScan = (decodedText: string) => {
     if (scannerTarget === "form") {
@@ -150,7 +154,7 @@ export default function ProduitsPage() {
         await produitsService.update(editing.id, data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Produit modifié");
       } else {
-        await produitsService.create(data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+        await produitsService.create(data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` }, currentMagasinId);
         toast.success("Produit créé");
       }
       setShowModal(false);

@@ -5,8 +5,11 @@ import type { Categorie } from "@/types";
 import { Plus, Edit2, Trash2, Tag, X } from "lucide-react";
 import toast from "react-hot-toast";
 
+import { useAuth } from "@/lib/auth-context";
+
 // Ce composant peut être intégré dans une page dédiée ou dans la page produits
 export function CategoriesManager() {
+  const { appUser } = useAuth();
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Categorie | null>(null);
@@ -22,17 +25,22 @@ export function CategoriesManager() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!appUser) return;
     setLoading(true);
+    const adminUser = { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` };
     try {
-      if (editing) { await categoriesService.update(editing.id, form); toast.success("Catégorie modifiée"); }
-      else { await categoriesService.create(form as any); toast.success("Catégorie créée"); }
+      if (editing) { await categoriesService.update(editing.id, form, adminUser); toast.success("Catégorie modifiée"); }
+      else { await categoriesService.create(form as any, adminUser); toast.success("Catégorie créée"); }
       await reload(); setShowModal(false);
     } catch { toast.error("Erreur"); } finally { setLoading(false); }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, nom: string) => {
+    if (!appUser) return;
     if (!confirm("Supprimer cette catégorie ?")) return;
-    await categoriesService.delete(id); toast.success("Supprimée"); await reload();
+    await categoriesService.delete(id, nom, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` });
+    toast.success("Supprimée");
+    await reload();
   };
 
   return (
@@ -58,7 +66,7 @@ export function CategoriesManager() {
             </div>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               <button onClick={() => openEdit(c)} className="p-1 text-ink-muted hover:text-gold transition-colors"><Edit2 size={12} /></button>
-              <button onClick={() => handleDelete(c.id)} className="p-1 text-ink-muted hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
+              <button onClick={() => handleDelete(c.id, c.nom)} className="p-1 text-ink-muted hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
             </div>
           </div>
         ))}

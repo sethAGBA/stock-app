@@ -12,7 +12,7 @@ import { formatPrice } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 
 export default function DashboardPage() {
-  const { appUser } = useAuth();
+  const { appUser, currentMagasinId } = useAuth();
   const [produits, setProduits] = useState<Produit[]>([]);
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
@@ -23,14 +23,19 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!appUser) return;
-    const unsubP = produitsService.onSnapshot(p => { setProduits(p); setLoading(false); });
-    const unsubM = mouvementsService.onSnapshot(m => setMouvements(m));
-    clientsService.getAll().then(setClients);
-    ventesService.getAll().then(setVentes);
+    // Pour les non-admins, on attend d'avoir un magasinId avant de souscrire
+    // pour éviter l'erreur de permission sur la requête globale.
+    if (appUser.role !== "admin" && !currentMagasinId) return;
+
+    const unsubP = produitsService.onSnapshot(p => { setProduits(p); setLoading(false); }, currentMagasinId);
+    const unsubM = mouvementsService.onSnapshot(m => setMouvements(m), currentMagasinId);
+    clientsService.getAll(currentMagasinId).then(setClients);
+    ventesService.getAll(currentMagasinId).then(setVentes);
+    // Fournisseurs and Commandes are currently global
     fournisseursService.getAll().then(setFournisseurs);
-    commandesFournisseursService.getAll().then(setCommandes);
+    commandesFournisseursService.getAll(currentMagasinId).then(setCommandes);
     return () => { unsubP(); unsubM(); };
-  }, [appUser]);
+  }, [appUser, currentMagasinId]);
 
   // Alertes et Valuations
   const alertes = produits.filter(p => p.stockActuel <= p.stockMinimum);
@@ -95,8 +100,8 @@ export default function DashboardPage() {
           <h2 className="font-display text-3xl font-semibold text-ink">Tableau de bord</h2>
         </div>
 
-        {/* Valeurs de stock & Profitabilité (Nouveau) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Valeurs de stock & Profitabilité */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="card p-6 border-l-4 border-l-gold shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-cream/10">
             <div className="flex justify-between items-start">
               <div>
@@ -119,19 +124,6 @@ export default function DashboardPage() {
               </div>
               <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
                 <DollarSign size={24} />
-              </div>
-            </div>
-          </div>
-
-          <div className="card p-6 border-l-4 border-l-purple-500 shadow-lg hover:shadow-xl transition-shadow bg-gradient-to-br from-white to-purple-50/20">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-600 mb-1">Marge Moyenne</p>
-                <h3 className="text-3xl font-display font-black text-ink">{margeMoyenne.toFixed(1)} <span className="text-sm font-sans font-medium text-ink-muted">%</span></h3>
-                <p className="text-xs text-ink-muted mt-2">Performance commerciale globale</p>
-              </div>
-              <div className="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600">
-                <PieChart size={24} />
               </div>
             </div>
           </div>

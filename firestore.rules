@@ -28,21 +28,31 @@ service cloud.firestore {
          get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.role == 'vendeur');
     }
 
+    function myMagasinId() {
+      return get(/databases/$(database)/documents/utilisateurs/$(request.auth.uid)).data.magasinId;
+    }
+
+    // Autorise si admin OR si le magasinId du document est null OR correspond au magasin de l'utilisateur
+    function canAccessStore(data) {
+      let docMagasinId = data.get('magasinId', null);
+      return isAdmin() || docMagasinId == null || myMagasinId() == docMagasinId;
+    }
+
     // ── Produits ──
     match /produits/{id} {
-      allow read: if isAuth();
+      allow read: if isAuth() && canAccessStore(resource.data);
       // Création réservée aux gestionnaires et admins
-      allow create: if isGestionnaire();
+      allow create: if isGestionnaire() && canAccessStore(request.resource.data);
       // Modification du stock possible par vendeurs, gestionnaires et admins
-      allow update: if isGestionnaire() || isVendeur();
+      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data);
       allow delete: if isAdmin();
     }
 
     // ── Mouvements ──
     match /mouvements/{id} {
-      allow read: if isAuth();
+      allow read: if isAuth() && canAccessStore(resource.data);
       // Enregistrement de vente/réception par vendeurs ou gestionnaires
-      allow create: if isGestionnaire() || isVendeur();
+      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data);
       allow update, delete: if isAdmin();
     }
 
@@ -73,50 +83,68 @@ service cloud.firestore {
     // ── Utilisateurs ──
     match /utilisateurs/{uid} {
       allow read: if true; // Permettre la lecture pour le Setup Wizard et la vérification de compte
-      allow create: if isAuth() && (request.auth.uid == uid || request.auth.uid == 'fGg7Dp0KiGWiJqTOCKp8XmtEsQI3'); // DEBUG: Hardcoded admin check
+      allow create: if isAuth() && (request.auth.uid == uid || isAdmin());
       allow update: if isAuth() && (request.auth.uid == uid || isAdmin());
       allow delete: if isAdmin();
     }
 
     // ── Clients ──
     match /clients/{id} {
-      allow read: if isAuth();
-      allow write: if isVendeur();
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow update: if isVendeur() && canAccessStore(resource.data);
+      allow delete: if isAdmin();
     }
 
     // ── Ventes ──
     match /ventes/{id} {
-      allow read: if isAuth();
-      allow create: if isVendeur();
-      allow update, delete: if isAdmin();
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow update: if isAdmin() || (isVendeur() && canAccessStore(resource.data));
+      allow delete: if isAdmin();
     }
 
     // ── Commandes Fournisseurs ──
     match /commandes_fournisseurs/{id} {
-      allow read: if isAuth();
-      allow create, update: if isGestionnaire();
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isGestionnaire() && canAccessStore(request.resource.data);
+      allow update: if isGestionnaire() && canAccessStore(resource.data);
       allow delete: if isAdmin();
     }
 
     // ── Audit Logs ──
     match /audit_logs/{id} {
-      allow read: if isAdmin();
+      allow read: if isGestionnaire();
       allow create: if isAuth();
       allow update, delete: if false;
     }
 
     // ── Clôtures de Caisse ──
     match /clotures_caisse/{id} {
-      allow read: if isVendeur() && (isGestionnaire() || (resource != null && resource.data.utilisateurId == request.auth.uid));
-      allow create: if isVendeur();
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data);
       allow update, delete: if isAdmin();
     }
 
     // ── Inventaires ──
     match /inventaires/{id} {
-      allow read: if isGestionnaire() || isVendeur();
-      allow create, update: if isGestionnaire() || isVendeur();
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data);
+      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data);
       allow delete: if isAdmin();
+    }
+
+    // ── Sorties de Caisse ──
+    match /sorties_caisse/{id} {
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    // ── Magasins ──
+    match /magasins/{id} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
     }
   }
 }

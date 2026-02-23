@@ -1,3 +1,13 @@
+// ── Magasin ───────────────────────────────────────────────
+export interface Magasin {
+  id: string;
+  nom: string;
+  adresse?: string;
+  telephone?: string;
+  actif: boolean;
+  createdAt: Date;
+}
+
 // ── Utilisateur ──────────────────────────────────────────
 export type UserRole = "admin" | "gestionnaire" | "vendeur" | "lecteur";
 
@@ -8,6 +18,7 @@ export interface AppUser {
   prenom: string;
   role: UserRole;
   actif: boolean;
+  magasinId?: string | null;
   createdAt: Date;
 }
 
@@ -52,6 +63,7 @@ export interface Client {
   totalAchats: number;
   soldeDette: number; // Nouveau: Somme totale due par le client
   derniereVisite?: Date;
+  magasinId?: string | null;
   createdAt: Date;
 }
 
@@ -97,6 +109,7 @@ export interface CommandeFournisseur {
   receivedByName?: string;
   cancelledBy?: string;
   cancelledByName?: string;
+  magasinId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,6 +134,7 @@ export interface Produit {
   datePeremption?: Date | null; // Crucial pour pharma/agro
   emplacement?: string; // Rayon, Étagère...
   photoUrl?: string;
+  magasinId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -140,6 +154,7 @@ export interface Mouvement {
   motif: string;
   utilisateurId: string;
   utilisateurNom: string;
+  magasinId?: string | null;
   createdAt: Date;
 }
 
@@ -174,6 +189,7 @@ export interface Vente {
   annuleAt?: Date;
   utilisateurId: string;
   utilisateurNom: string;
+  magasinId?: string | null;
   createdAt: Date;
 }
 
@@ -231,6 +247,7 @@ export interface ClotureCaisse {
   utilisateurNom: string;
   vendeurId?: string;       // Personne dont c'est la caisse (pour V2)
   vendeurNom?: string;
+  magasinId?: string | null;
   createdAt: Date;
 }
 
@@ -251,6 +268,19 @@ export interface InventaireSession {
     ecart: number;
   }[];
   notes?: string;
+  magasinId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+// ── Sortie de Caisse ─────────────────────────────────────
+export interface SortieCaisse {
+  id: string;
+  montant: number;
+  motif: string;
+  categorie: string;
+  beneficiaire?: string;
+  utilisateurId: string;
+  utilisateurNom: string;
+  magasinId?: string | null;
+  createdAt: Date;
 }

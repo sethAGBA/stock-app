@@ -12,9 +12,10 @@ interface Props {
     fournisseurNom: string;
     onClose: () => void;
     onSuccess: () => void;
+    magasinId?: string | null;
 }
 
-export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSuccess }: Props) {
+export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSuccess, magasinId }: Props) {
     const { appUser } = useAuth();
     const [produits, setProduits] = useState<Produit[]>([]);
     const [search, setSearch] = useState("");
@@ -23,14 +24,11 @@ export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSucces
     const [dateEcheance, setDateEcheance] = useState("");
 
     useEffect(() => {
-        // Charger uniquement les produits de ce fournisseur ?
-        // Pour l'instant on charge tout et on filtre, ou on laisse le choix libre
-        produitsService.getAll().then(all => {
-            // Optionnel : filtrer par fournisseurId si on veut restreindre
-            // const filtered = all.filter(p => p.fournisseurId === fournisseurId);
+        // Charger uniquement les produits de ce magasin (et éventuellement filtrés par fournisseur)
+        produitsService.getAll(magasinId).then(all => {
             setProduits(all);
         });
-    }, [fournisseurId]);
+    }, [fournisseurId, magasinId]);
 
     const filteredProduits = produits.filter(p =>
         p.designation.toLowerCase().includes(search.toLowerCase()) ||
@@ -82,7 +80,7 @@ export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSucces
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 dateEcheance: dateEcheance ? new Date(dateEcheance) : null
-            } as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+            } as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` }, magasinId);
             toast.success("Commande créée (brouillon)");
             onSuccess();
             onClose();

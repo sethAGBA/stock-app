@@ -17,7 +17,7 @@ import { fr } from "date-fns/locale";
 const EMPTY = { nom: "", contact: "", email: "", telephone: "", delaiLivraison: 7 };
 
 export default function FournisseursPage() {
-  const { appUser } = useAuth();
+  const { appUser, currentMagasinId } = useAuth();
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -94,10 +94,10 @@ export default function FournisseursPage() {
 
   useEffect(() => {
     if (selectedFournisseur && activeTab === "commandes") {
-      const unsub = commandesFournisseursService.onSnapshot(selectedFournisseur.id, setCommandes);
+      const unsub = commandesFournisseursService.onSnapshot(selectedFournisseur.id, setCommandes, currentMagasinId);
       return () => unsub();
     }
-  }, [selectedFournisseur, activeTab]);
+  }, [selectedFournisseur, activeTab, currentMagasinId]);
 
   const handleUpdateStatus = async (id: string, statut: CommandeFournisseur["statut"]) => {
     if (statut === "annulee") {
@@ -516,6 +516,7 @@ export default function FournisseursPage() {
           <NewOrderModal
             fournisseurId={selectedFournisseur.id}
             fournisseurNom={selectedFournisseur.nom}
+            magasinId={currentMagasinId}
             onClose={() => setShowOrderModal(false)}
             onSuccess={() => {
               setShowOrderModal(false);

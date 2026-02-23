@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { ventesService, cloturesService, utilisateursService } from "@/lib/db";
-import type { Vente, ClotureCaisse, AppUser } from "@/types";
-import { Save, Wallet, Calculator, AlertTriangle, CheckCircle2, History, ChevronRight, TrendingUp, User } from "lucide-react";
+import { ventesService, cloturesService, utilisateursService, sortiesCaisseService } from "@/lib/db";
+import type { Vente, ClotureCaisse, AppUser, SortieCaisse } from "@/types";
+import { Save, Wallet, Calculator, AlertTriangle, CheckCircle2, History, ChevronRight, User } from "lucide-react";
 import { format, startOfDay, endOfDay } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
@@ -12,7 +12,7 @@ import clsx from "clsx";
 import { formatPrice } from "@/lib/format";
 
 export default function CashClosurePage() {
-    const { appUser } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [todaySales, setTodaySales] = useState<Vente[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -22,6 +22,7 @@ export default function CashClosurePage() {
     const [activeTab, setActiveTab] = useState<"new" | "history">("new");
     const [vendeurs, setVendeurs] = useState<AppUser[]>([]);
     const [selectedSellerId, setSelectedSellerId] = useState<string>("");
+    const [sorties, setSorties] = useState<SortieCaisse[]>([]);
 
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
 
@@ -38,33 +39,36 @@ export default function CashClosurePage() {
 
         setLoading(true);
         Promise.all([
-            ventesService.getForDateRange(start, end, selectedSellerId || appUser.uid),
-            cloturesService.getAll(isGestionnaire ? undefined : appUser.uid),
-            isGestionnaire ? utilisateursService.getAll() : Promise.resolve([])
-        ]).then(([sales, closures, users]) => {
+            ventesService.getForDateRange(start, end, selectedSellerId || appUser.uid, currentMagasinId),
+            cloturesService.getAll(isGestionnaire ? undefined : appUser.uid, currentMagasinId),
+            isGestionnaire ? utilisateursService.getAll(currentMagasinId) : Promise.resolve([]),
+            sortiesCaisseService.getForDateRange(start, end, currentMagasinId)
+        ]).then(([sales, closures, users, withdrawals]) => {
             setTodaySales(sales);
             setHistory(closures);
             if (users.length > 0) setVendeurs(users);
+            setSorties(withdrawals);
             setLoading(false);
 
             // Calculer montant théorique initial (espèces attendues)
             const especes = sales
-                .filter(v => v.modePaiement === "especes")
-                .reduce((acc, v) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0);
+                .filter((v: Vente) => v.modePaiement === "especes")
+                .reduce((acc: number, v: Vente) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0);
             setMontantReel(especes);
         });
-    }, [appUser, selectedSellerId, isGestionnaire]);
+    }, [appUser, selectedSellerId, isGestionnaire, currentMagasinId]);
 
     const totals = {
-        especes: todaySales.filter(v => v.modePaiement === "especes").reduce((acc, v) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0),
-        mobile_money: todaySales.filter(v => v.modePaiement === "mobile_money").reduce((acc, v) => acc + v.totalTTC, 0),
-        carte: todaySales.filter(v => v.modePaiement === "carte").reduce((acc, v) => acc + v.totalTTC, 0),
-        credit: todaySales.filter(v => v.modePaiement === "credit").reduce((acc, v) => acc + v.totalTTC, 0),
-        autre: todaySales.filter(v => v.modePaiement === "autre").reduce((acc, v) => acc + v.totalTTC, 0),
+        especes: todaySales.filter((v: Vente) => v.modePaiement === "especes").reduce((acc: number, v: Vente) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0),
+        mobile_money: todaySales.filter((v: Vente) => v.modePaiement === "mobile_money").reduce((acc: number, v: Vente) => acc + v.totalTTC, 0),
+        carte: todaySales.filter((v: Vente) => v.modePaiement === "carte").reduce((acc: number, v: Vente) => acc + v.totalTTC, 0),
+        credit: todaySales.filter((v: Vente) => v.modePaiement === "credit").reduce((acc: number, v: Vente) => acc + v.totalTTC, 0),
+        autre: todaySales.filter((v: Vente) => v.modePaiement === "autre").reduce((acc: number, v: Vente) => acc + v.totalTTC, 0),
     };
 
     const totalVentes = Object.values(totals).reduce((a, b) => a + b, 0);
-    const montantTheorique = totals.especes; // Ce qui doit être en caisse physiquement
+    const totalSorties = sorties.reduce((acc: number, s: SortieCaisse) => acc + s.montant, 0);
+    const montantTheorique = totals.especes - totalSorties; // Ce qui doit être en caisse physiquement
     const ecart = montantReel - montantTheorique;
 
     const handleSave = async () => {
@@ -88,12 +92,13 @@ export default function CashClosurePage() {
                 utilisateurNom: `${appUser.prenom} ${appUser.nom}`,
                 vendeurId: selectedSellerId || appUser.uid,
                 vendeurNom: vendeurObject ? `${vendeurObject.prenom} ${vendeurObject.nom}` : "Vendeur",
+                magasinId: currentMagasinId
             };
 
-            await cloturesService.enregistrer(closureData);
+            await cloturesService.enregistrer(closureData, currentMagasinId);
             toast.success("Rapport Z enregistré avec succès");
             setActiveTab("history");
-            const newHistory = await cloturesService.getAll(isGestionnaire ? undefined : appUser.uid);
+            const newHistory = await cloturesService.getAll(isGestionnaire ? undefined : appUser.uid, currentMagasinId);
             setHistory(newHistory);
         } catch (err) {
             toast.error("Erreur lors de l'enregistrement");
@@ -152,7 +157,7 @@ export default function CashClosurePage() {
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <ClosureKPI label="Total Ventes" value={totalVentes} color="gold" />
                                 <ClosureKPI label="En Espèces" value={totals.especes} color="green" />
-                                <ClosureKPI label="Mobile Money" value={totals.mobile_money} color="blue" />
+                                <ClosureKPI label="Sorties Caisse" value={totalSorties} color="red" />
                                 <ClosureKPI label="Ventes Crédit" value={totals.credit} color="red" />
                             </div>
 

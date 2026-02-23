@@ -8,11 +8,14 @@ import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
+export const viewport = {
+  themeColor: "#B8935A",
+};
+
 export const metadata: Metadata = {
   title: "Gestion de Stock — Vision+ Consulting",
   description: "Logiciel de gestion de stock développé par TogoStock",
   manifest: "/manifest.json",
-  themeColor: "#B8935A",
   icons: {
     icon: "/favicon.ico",
   },

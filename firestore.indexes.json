@@ -1,4 +1,163 @@
 {
-    "indexes": [],
+    "indexes": [
+        {
+            "collectionGroup": "produits",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "designation",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "ventes",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "sorties_caisse",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "mouvements",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "clotures_caisse",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "clotures_caisse",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "vendeurId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "date",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "inventaires",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "DESCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "utilisateurs",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "nom",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "clients",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "nom",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "commandes_fournisseurs",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "createdAt",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
+            "collectionGroup": "commandes_fournisseurs",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "fournisseurId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "magasinId",
+                    "order": "ASCENDING"
+                }
+            ]
+        }
+    ],
     "fieldOverrides": []
 }

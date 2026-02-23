@@ -5,7 +5,7 @@ import {
 } from "firebase/firestore";
 import { format } from "date-fns";
 import { db } from "./firebase";
-import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession } from "@/types";
+import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession, SortieCaisse, Magasin } from "@/types";
 
 // ── Collections ───────────────────────────────────────────
 const COLS = {
@@ -22,18 +22,148 @@ const COLS = {
   audit: "audit_logs",
   clotures: "clotures_caisse",
   inventaires: "inventaires",
+  sortiesCaisse: "sorties_caisse",
+  magasins: "magasins",
 };
 
 const toDate = (ts: any): Date =>
   ts instanceof Timestamp ? ts.toDate() : new Date(ts);
 
 // ════════════════════════════════════════
+// AUDIT LOGS
+// ════════════════════════════════════════
+export const auditService = {
+  async enregistrer(data: Omit<AuditLog, "id" | "createdAt">): Promise<void> {
+    await addDoc(collection(db, COLS.audit), {
+      ...data,
+      createdAt: serverTimestamp(),
+    });
+  },
+
+  async getRecent(limitN = 100): Promise<AuditLog[]> {
+    const q = query(collection(db, COLS.audit), orderBy("createdAt", "desc"), limit(limitN));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as AuditLog));
+  }
+};
+
+// ════════════════════════════════════════
+// MAGASINS
+// ════════════════════════════════════════
+export const magasinsService = {
+  async getAll(): Promise<Magasin[]> {
+    const q = query(collection(db, COLS.magasins), orderBy("createdAt", "asc"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as Magasin));
+  },
+
+  async getById(id: string): Promise<Magasin | null> {
+    const snap = await getDoc(doc(db, COLS.magasins, id));
+    if (!snap.exists()) return null;
+    return { id: snap.id, ...snap.data(), createdAt: toDate(snap.data()!.createdAt) } as Magasin;
+  },
+
+  async create(data: Omit<Magasin, "id" | "createdAt">): Promise<string> {
+    const ref = await addDoc(collection(db, COLS.magasins), {
+      ...data,
+      actif: true,
+      createdAt: serverTimestamp(),
+    });
+    return ref.id;
+  },
+
+  async update(id: string, data: Partial<Omit<Magasin, "id" | "createdAt">>): Promise<void> {
+    await updateDoc(doc(db, COLS.magasins, id), data);
+  },
+
+  async delete(id: string): Promise<void> {
+    await deleteDoc(doc(db, COLS.magasins, id));
+  },
+
+  async assignUserToMagasin(userId: string, magasinId: string | null): Promise<void> {
+    await updateDoc(doc(db, COLS.utilisateurs, userId), {
+      magasinId: magasinId ?? null,
+    });
+  },
+};
+
+// ════════════════════════════════════════
+// SORTIES DE CAISSE
+// ════════════════════════════════════════
+export const sortiesCaisseService = {
+  async enregistrer(data: Omit<SortieCaisse, "id" | "createdAt">, magasinId?: string | null): Promise<string> {
+    const ref = await addDoc(collection(db, COLS.sortiesCaisse), {
+      ...data,
+      magasinId: magasinId || null,
+      createdAt: serverTimestamp(),
+    });
+
+    await auditService.enregistrer({
+      type: "paiement",
+      action: "SORTIE_CAISSE",
+      details: `Sortie de caisse (${data.categorie}) de ${data.montant} F - Motif: ${data.motif}`,
+      utilisateurId: data.utilisateurId,
+      utilisateurNom: data.utilisateurNom,
+    });
+
+    return ref.id;
+  },
+
+  async getAll(magasinId?: string | null): Promise<SortieCaisse[]> {
+    let q = query(collection(db, COLS.sortiesCaisse), orderBy("createdAt", "desc"));
+    if (magasinId) {
+      // Pour les vendeurs/gestionnaires, on filtre obligatoirement au niveau serveur
+      q = query(collection(db, COLS.sortiesCaisse), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"));
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as SortieCaisse));
+  },
+
+  async getForDateRange(start: Date, end: Date, magasinId?: string | null): Promise<SortieCaisse[]> {
+    let q = query(
+      collection(db, COLS.sortiesCaisse),
+      where("createdAt", ">=", start),
+      where("createdAt", "<=", end),
+      orderBy("createdAt", "desc")
+    );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.sortiesCaisse),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as SortieCaisse));
+  }
+};
+
+// ════════════════════════════════════════
 // PRODUITS
 // ════════════════════════════════════════
 export const produitsService = {
-  async getAll(): Promise<Produit[]> {
-    const snap = await getDocs(query(collection(db, COLS.produits), orderBy("designation")));
-    return snap.docs.map(d => {
+  async getAll(magasinId?: string | null): Promise<Produit[]> {
+    const q = query(collection(db, COLS.produits), orderBy("designation"));
+    const snap = await getDocs(q);
+    let all = snap.docs.map(d => {
       const data = d.data();
       return {
         id: d.id,
@@ -43,6 +173,10 @@ export const produitsService = {
         datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
       } as Produit;
     });
+    if (magasinId) {
+      all = all.filter(p => !p.magasinId || p.magasinId === magasinId);
+    }
+    return all;
   },
 
   async getById(id: string): Promise<Produit | null> {
@@ -58,10 +192,11 @@ export const produitsService = {
     } as Produit;
   },
 
-  async create(data: Omit<Produit, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
+  async create(data: Omit<Produit, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }, magasinId?: string | null): Promise<string> {
     const ref = await addDoc(collection(db, COLS.produits), {
       ...data,
       stockActuel: 0,
+      ...(magasinId ? { magasinId } : {}),
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -106,19 +241,29 @@ export const produitsService = {
     return all.filter(p => p.stockActuel <= p.stockMinimum);
   },
 
-  onSnapshot(callback: (produits: Produit[]) => void) {
-    return onSnapshot(query(collection(db, COLS.produits), orderBy("designation")), snap => {
-      callback(snap.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          ...data,
-          createdAt: toDate(data.createdAt),
-          updatedAt: toDate(data.updatedAt),
-          datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
-        } as Produit;
-      }));
-    });
+  onSnapshot(callback: (produits: Produit[]) => void, magasinId?: string | null) {
+    const q = query(collection(db, COLS.produits), orderBy("designation"));
+    return onSnapshot(q,
+      snap => {
+        let all = snap.docs.map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            createdAt: toDate(data.createdAt),
+            updatedAt: toDate(data.updatedAt),
+            datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
+          } as Produit;
+        });
+        if (magasinId) {
+          all = all.filter(p => !p.magasinId || p.magasinId === magasinId);
+        }
+        callback(all);
+      },
+      error => {
+        console.error("Erreur onSnapshot produits:", error);
+      }
+    );
   },
 };
 
@@ -164,6 +309,7 @@ export const mouvementsService = {
         motif,
         utilisateurId: utilisateur.uid,
         utilisateurNom: utilisateur.nom,
+        magasinId: produit.magasinId || null,
         createdAt: serverTimestamp(),
       });
 
@@ -178,8 +324,10 @@ export const mouvementsService = {
     });
   },
 
-  async getRecents(limitN = 50): Promise<Mouvement[]> {
-    const snap = await getDocs(query(collection(db, COLS.mouvements), orderBy("createdAt", "desc"), limit(limitN)));
+  async getRecents(limitN = 50, magasinId?: string | null): Promise<Mouvement[]> {
+    let q = query(collection(db, COLS.mouvements), orderBy("createdAt", "desc"), limit(limitN));
+    if (magasinId) q = query(collection(db, COLS.mouvements), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(limitN));
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Mouvement));
   },
 
@@ -188,13 +336,23 @@ export const mouvementsService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Mouvement));
   },
 
-  async getByPeriode(debut: Date, fin: Date): Promise<Mouvement[]> {
-    const snap = await getDocs(query(
+  async getByPeriode(debut: Date, fin: Date, magasinId?: string | null): Promise<Mouvement[]> {
+    let q = query(
       collection(db, COLS.mouvements),
       where("createdAt", ">=", Timestamp.fromDate(debut)),
       where("createdAt", "<=", Timestamp.fromDate(fin)),
       orderBy("createdAt", "desc")
-    ));
+    );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.mouvements),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", Timestamp.fromDate(debut)),
+        where("createdAt", "<=", Timestamp.fromDate(fin)),
+        orderBy("createdAt", "desc")
+      );
+    }
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Mouvement));
   },
 
@@ -232,6 +390,7 @@ export const mouvementsService = {
           motif: adj.motif,
           utilisateurId: utilisateur.uid,
           utilisateurNom: utilisateur.nom,
+          magasinId: produit.magasinId || null,
           createdAt: serverTimestamp(),
         });
       });
@@ -247,10 +406,18 @@ export const mouvementsService = {
     });
   },
 
-  onSnapshot(callback: (mouvements: Mouvement[]) => void) {
-    return onSnapshot(query(collection(db, COLS.mouvements), orderBy("createdAt", "desc"), limit(100)), snap => {
-      callback(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Mouvement)));
-    });
+  onSnapshot(callback: (mouvements: Mouvement[]) => void, magasinId?: string | null) {
+    let q = query(collection(db, COLS.mouvements), orderBy("createdAt", "desc"), limit(100));
+    if (magasinId) q = query(collection(db, COLS.mouvements), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(100));
+    return onSnapshot(q,
+      snap => {
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Mouvement));
+        callback(all);
+      },
+      error => {
+        console.error("Erreur onSnapshot mouvements:", error);
+      }
+    );
   },
 };
 
@@ -432,9 +599,14 @@ export const utilisateursService = {
     return { uid: snap.id, ...snap.data(), createdAt: toDate(snap.data()!.createdAt) } as AppUser;
   },
 
-  async getAll(): Promise<AppUser[]> {
-    const snap = await getDocs(query(collection(db, COLS.utilisateurs), orderBy("nom")));
-    return snap.docs.map(d => ({ uid: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as AppUser));
+  async getAll(magasinId?: string | null): Promise<AppUser[]> {
+    const q = query(collection(db, COLS.utilisateurs), orderBy("nom"));
+    const snap = await getDocs(q);
+    let all = snap.docs.map(d => ({ uid: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as AppUser));
+    if (magasinId) {
+      all = all.filter(u => !u.magasinId || u.magasinId === magasinId);
+    }
+    return all;
   },
 
   async create(uid: string, data: Omit<AppUser, "uid" | "createdAt">, admin: { uid: string; nom: string }): Promise<void> {
@@ -471,16 +643,22 @@ export const utilisateursService = {
 // CLIENTS
 // ════════════════════════════════════════
 export const clientsService = {
-  async getAll(): Promise<Client[]> {
-    const snap = await getDocs(query(collection(db, COLS.clients), orderBy("nom")));
-    return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt), derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined } as Client));
+  async getAll(magasinId?: string | null): Promise<Client[]> {
+    const q = query(collection(db, COLS.clients), orderBy("nom"));
+    const snap = await getDocs(q);
+    let all = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt), derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined } as Client));
+    if (magasinId) {
+      all = all.filter(c => !c.magasinId || c.magasinId === magasinId);
+    }
+    return all;
   },
 
-  async create(data: Omit<Client, "id" | "createdAt" | "totalAchats" | "soldeDette">, utilisateur: { uid: string; nom: string }): Promise<string> {
+  async create(data: Omit<Client, "id" | "createdAt" | "totalAchats" | "soldeDette">, utilisateur: { uid: string; nom: string }, magasinId?: string | null): Promise<string> {
     const ref = await addDoc(collection(db, COLS.clients), {
       ...data,
       totalAchats: 0,
       soldeDette: 0,
+      magasinId: magasinId || null,
       createdAt: serverTimestamp(),
     });
 
@@ -597,6 +775,7 @@ export const ventesService = {
       tx.set(venteRef, {
         ...data,
         statut: "valide",
+        magasinId: data.magasinId || null,
         createdAt: serverTimestamp(),
       });
 
@@ -692,18 +871,29 @@ export const ventesService = {
     });
   },
 
-  async getAll(): Promise<Vente[]> {
-    const snap = await getDocs(query(collection(db, COLS.ventes), orderBy("createdAt", "desc")));
+  async getAll(magasinId?: string | null): Promise<Vente[]> {
+    let q = query(collection(db, COLS.ventes), orderBy("createdAt", "desc"));
+    if (magasinId) {
+      q = query(collection(db, COLS.ventes), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"));
+    }
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
   },
 
-  async getForDateRange(start: Date, end: Date, utilisateurId?: string): Promise<Vente[]> {
-    // On ne filtre plus par utilisateurId dans la requête Firestore pour éviter les index composites
-    const q = query(
+  async getForDateRange(start: Date, end: Date, utilisateurId?: string, magasinId?: string | null): Promise<Vente[]> {
+    let q = query(
       collection(db, COLS.ventes),
       where("createdAt", ">=", start),
       where("createdAt", "<=", end)
     );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.ventes),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end)
+      );
+    }
 
     const snap = await getDocs(q);
     let results = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
@@ -717,19 +907,30 @@ export const ventesService = {
     return results.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   },
 
-  async getRecent(limitN = 50): Promise<Vente[]> {
-    const snap = await getDocs(query(collection(db, COLS.ventes), orderBy("createdAt", "desc"), limit(limitN)));
+  async getRecent(limitN = 50, magasinId?: string | null): Promise<Vente[]> {
+    let q = query(collection(db, COLS.ventes), orderBy("createdAt", "desc"), limit(limitN));
+    if (magasinId) q = query(collection(db, COLS.ventes), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(limitN));
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
   },
 
-  async getStats(dateDebut: Date, dateFin: Date) {
+  async getStats(dateDebut: Date, dateFin: Date, magasinId?: string | null) {
     // Fetch all sales in range
-    const q = query(
+    let q = query(
       collection(db, COLS.ventes),
-      orderBy("createdAt", "desc"),
       where("createdAt", ">=", dateDebut),
-      where("createdAt", "<=", dateFin)
+      where("createdAt", "<=", dateFin),
+      orderBy("createdAt", "desc")
     );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.ventes),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", dateDebut),
+        where("createdAt", "<=", dateFin),
+        orderBy("createdAt", "desc")
+      );
+    }
     const snap = await getDocs(q);
     const ventes = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
 
@@ -767,16 +968,24 @@ export const ventesService = {
     return { totalVentes, caTotal, topProduits, evolutionCA, ventes };
   },
 
-  onSnapshot(callback: (ventes: Vente[]) => void) {
-    return onSnapshot(query(collection(db, COLS.ventes), orderBy("createdAt", "desc"), limit(100)), snap => {
-      callback(snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente)));
-    });
+  onSnapshot(callback: (ventes: Vente[]) => void, magasinId?: string | null) {
+    let q = query(collection(db, COLS.ventes), orderBy("createdAt", "desc"), limit(100));
+    if (magasinId) q = query(collection(db, COLS.ventes), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(100));
+    return onSnapshot(q,
+      snap => {
+        const all = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
+        callback(all);
+      },
+      error => {
+        console.error("Erreur onSnapshot ventes:", error);
+      }
+    );
   },
 };
 
 // --- Commandes Fournisseurs ---
 export const commandesFournisseursService = {
-  async create(data: Omit<CommandeFournisseur, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
+  async create(data: Omit<CommandeFournisseur, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }, magasinId?: string | null): Promise<string> {
     const totalTTC = data.totalTTC;
     const montantPaye = data.montantPaye || 0;
     const resteAPayer = totalTTC - montantPaye;
@@ -799,6 +1008,7 @@ export const commandesFournisseursService = {
         montantPaye,
         resteAPayer,
         statutPaiement,
+        magasinId: magasinId || null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -849,8 +1059,12 @@ export const commandesFournisseursService = {
     });
   },
 
-  async getAll(): Promise<CommandeFournisseur[]> {
-    const snap = await getDocs(collection(db, COLS.commandesFournisseurs));
+  async getAll(magasinId?: string | null): Promise<CommandeFournisseur[]> {
+    let q = query(collection(db, COLS.commandesFournisseurs));
+    if (magasinId) {
+      q = query(q, where("magasinId", "==", magasinId));
+    }
+    const snap = await getDocs(q);
     return snap.docs.map(d => {
       const raw = d.data();
       const totalTTC = raw.totalTTC || 0;
@@ -868,11 +1082,14 @@ export const commandesFournisseursService = {
     });
   },
 
-  onSnapshot(fournisseurId: string, callback: (commandes: CommandeFournisseur[]) => void) {
-    const q = query(
+  onSnapshot(fournisseurId: string, callback: (commandes: CommandeFournisseur[]) => void, magasinId?: string | null) {
+    let q = query(
       collection(db, COLS.commandesFournisseurs),
       where("fournisseurId", "==", fournisseurId)
     );
+    if (magasinId) {
+      q = query(q, where("magasinId", "==", magasinId));
+    }
     return onSnapshot(q,
       (snap) => {
         const data = snap.docs.map(d => {
@@ -938,6 +1155,7 @@ export const commandesFournisseursService = {
           motif: `Réception commande #${commande.id.slice(0, 6)}`,
           utilisateurId: userInfo.receivedBy,
           utilisateurNom: userInfo.receivedByName,
+          magasinId: productData.magasinId || null,
           createdAt: serverTimestamp()
         });
       });
@@ -1013,34 +1231,15 @@ export const commandesFournisseursService = {
 };
 
 // ════════════════════════════════════════
-// AUDIT LOGS
-// ════════════════════════════════════════
-export const auditService = {
-  async enregistrer(data: Omit<AuditLog, "id" | "createdAt">): Promise<void> {
-    await addDoc(collection(db, COLS.audit), {
-      ...data,
-      createdAt: serverTimestamp(),
-    });
-  },
-
-  async getRecent(limitN = 100): Promise<AuditLog[]> {
-    const q = query(collection(db, COLS.audit), orderBy("createdAt", "desc"), limit(limitN));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-      createdAt: toDate(d.data().createdAt)
-    } as AuditLog));
-  }
-};
 
 // ════════════════════════════════════════
 // CLOTURES DE CAISSE
 // ════════════════════════════════════════
 export const cloturesService = {
-  async enregistrer(data: Omit<ClotureCaisse, "id" | "createdAt">): Promise<string> {
+  async enregistrer(data: Omit<ClotureCaisse, "id" | "createdAt">, magasinId?: string | null): Promise<string> {
     const ref = await addDoc(collection(db, COLS.clotures), {
       ...data,
+      magasinId: magasinId || null,
       createdAt: serverTimestamp(),
     });
 
@@ -1057,10 +1256,16 @@ export const cloturesService = {
     return ref.id;
   },
 
-  async getAll(vendeurId?: string): Promise<ClotureCaisse[]> {
+  async getAll(vendeurId?: string, magasinId?: string | null): Promise<ClotureCaisse[]> {
     let q = query(collection(db, COLS.clotures), orderBy("date", "desc"));
     if (vendeurId) {
       q = query(collection(db, COLS.clotures), where("vendeurId", "==", vendeurId), orderBy("date", "desc"));
+    }
+    if (magasinId) {
+      q = query(collection(db, COLS.clotures), where("magasinId", "==", magasinId), orderBy("date", "desc"));
+      if (vendeurId) {
+        q = query(collection(db, COLS.clotures), where("magasinId", "==", magasinId), where("vendeurId", "==", vendeurId), orderBy("date", "desc"));
+      }
     }
     const snap = await getDocs(q);
     return snap.docs.map(d => ({
@@ -1073,9 +1278,10 @@ export const cloturesService = {
 };
 
 export const inventaireService = {
-  async enregistrer(data: Omit<InventaireSession, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
+  async enregistrer(data: Omit<InventaireSession, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }, magasinId?: string | null): Promise<string> {
     const ref = await addDoc(collection(db, COLS.inventaires), {
       ...data,
+      magasinId: magasinId || null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -1091,8 +1297,11 @@ export const inventaireService = {
     return ref.id;
   },
 
-  async getAll(): Promise<InventaireSession[]> {
-    const q = query(collection(db, COLS.inventaires), orderBy("createdAt", "desc"));
+  async getAll(magasinId?: string | null): Promise<InventaireSession[]> {
+    let q = query(collection(db, COLS.inventaires), orderBy("createdAt", "desc"));
+    if (magasinId) {
+      q = query(collection(db, COLS.inventaires), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"));
+    }
     const snap = await getDocs(q);
     return snap.docs.map(d => ({
       id: d.id,
@@ -1163,3 +1372,4 @@ export const inventaireService = {
     });
   }
 };
+

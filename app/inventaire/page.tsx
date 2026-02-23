@@ -26,7 +26,7 @@ interface LigneInventaire {
 }
 
 export default function InventairePage() {
-    const { appUser } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [produits, setProduits] = useState<Produit[]>([]);
     const [categories, setCategories] = useState<Categorie[]>([]);
     const [history, setHistory] = useState<InventaireSession[]>([]);
@@ -41,17 +41,19 @@ export default function InventairePage() {
     const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
+        if (!appUser) return;
+        setLoading(true);
         Promise.all([
-            produitsService.getAll(),
+            produitsService.getAll(currentMagasinId),
             categoriesService.getAll(),
-            inventaireService.getAll()
+            inventaireService.getAll(currentMagasinId)
         ]).then(([p, c, h]) => {
             setProduits(p);
             setCategories(c);
             setHistory(h);
             setLoading(false);
         });
-    }, []);
+    }, [appUser, currentMagasinId]);
 
     const addToInventaire = (p: Produit) => {
         if (lignes.find(l => l.produitId === p.id)) {
@@ -96,11 +98,12 @@ export default function InventairePage() {
                 utilisateurNom: `${appUser.prenom} ${appUser.nom}`,
                 statut: "en_cours",
                 lignes,
-                notes
-            }, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` });
+                notes,
+                magasinId: currentMagasinId
+            }, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` }, currentMagasinId);
             toast.success("Inventaire de session enregistré");
             // Refresh history
-            inventaireService.getAll().then(setHistory);
+            inventaireService.getAll(currentMagasinId).then(setHistory);
             // Reset for next
             setLignes([]);
             setNotes("");
@@ -120,7 +123,7 @@ export default function InventairePage() {
         try {
             await inventaireService.valider(inv.id, appUser.uid, `${appUser.prenom} ${appUser.nom}`);
             toast.success("Stocks mis à jour avec succès");
-            inventaireService.getAll().then(setHistory);
+            inventaireService.getAll(currentMagasinId).then(setHistory);
         } catch (err: any) {
             toast.error(err.message || "Erreur de validation");
         } finally {

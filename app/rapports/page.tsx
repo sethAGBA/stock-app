@@ -14,7 +14,7 @@ import {
 import { useAuth } from "@/lib/auth-context";
 
 export default function RapportsPage() {
-  const { appUser } = useAuth();
+  const { appUser, currentMagasinId } = useAuth();
   const [dateDebut, setDateDebut] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd"));
   const [dateFin, setDateFin] = useState(format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export default function RapportsPage() {
       const debut = new Date(dateDebut);
       const fin = new Date(dateFin); fin.setHours(23, 59, 59);
       const [mouvements, etablissement] = await Promise.all([
-        mouvementsService.getByPeriode(debut, fin),
+        mouvementsService.getByPeriode(debut, fin, currentMagasinId),
         etablissementService.get()
       ]);
 
@@ -76,8 +76,8 @@ export default function RapportsPage() {
       const XLSX = await import("xlsx");
       const debut = new Date(dateDebut);
       const fin = new Date(dateFin); fin.setHours(23, 59, 59);
-      const mouvements = await mouvementsService.getByPeriode(debut, fin);
-      const produits = await produitsService.getAll();
+      const mouvements = await mouvementsService.getByPeriode(debut, fin, currentMagasinId);
+      const produits = await produitsService.getAll(currentMagasinId);
 
       const wb = XLSX.utils.book_new();
       const mvtData = mouvements.map(m => ({
@@ -116,14 +116,14 @@ export default function RapportsPage() {
       if (!appUser) return;
       const debut = new Date(dateDebut);
       const fin = new Date(dateFin); fin.setHours(23, 59, 59);
-      const data = await ventesService.getStats(debut, fin);
+      const data = await ventesService.getStats(debut, fin, currentMagasinId);
       setStats(data);
 
-      const clients = await clientsService.getAll();
+      const clients = await clientsService.getAll(currentMagasinId);
       setTotalCreances(clients.reduce((acc, c) => acc + (c.soldeDette || 0), 0));
     };
     fetchStats();
-  }, [dateDebut, dateFin, appUser]);
+  }, [dateDebut, dateFin, appUser, currentMagasinId]);
 
   return (
     <AppLayout>

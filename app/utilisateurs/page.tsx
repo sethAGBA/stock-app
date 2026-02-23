@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { utilisateursService } from "@/lib/db";
-import type { AppUser, UserRole } from "@/types";
+import type { AppUser, UserRole, Magasin } from "@/types";
 import { useAuth } from "@/lib/auth-context";
-import { UserPlus, Mail, Shield, CheckCircle2, XCircle, Search, Edit2, Key, Trash2 } from "lucide-react";
+import { UserPlus, Mail, Shield, CheckCircle2, XCircle, Search, Edit2, Key, Trash2, Store } from "lucide-react";
 import toast from "react-hot-toast";
 import { initializeApp, getApps, deleteApp } from "firebase/app";
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
@@ -28,9 +28,9 @@ export default function UtilisateursPage() {
   const [modalLoading, setModalLoading] = useState(false);
 
   const [form, setForm] = useState({
-    nom: "", prenom: "", email: "", password: "", role: "vendeur" as UserRole
+    nom: "", prenom: "", email: "", password: "", role: "vendeur" as UserRole, magasinId: ""
   });
-  const { appUser } = useAuth();
+  const { appUser, magasins } = useAuth();
 
   useEffect(() => {
     fetchUsers();
@@ -67,12 +67,13 @@ export default function UtilisateursPage() {
         prenom: form.prenom,
         email: form.email,
         role: form.role,
+        magasinId: form.magasinId || null,
         actif: true,
       }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
 
       toast.success("Utilisateur créé avec succès");
       setShowModal(false);
-      setForm({ nom: "", prenom: "", email: "", password: "", role: "vendeur" });
+      setForm({ nom: "", prenom: "", email: "", password: "", role: "vendeur", magasinId: "" });
       fetchUsers();
     } catch (err: any) {
       toast.error(err.message || "Erreur lors de la création");
@@ -159,6 +160,15 @@ export default function UtilisateursPage() {
                   </div>
                 </div>
 
+                {user.magasinId && (
+                  <div className="flex items-center gap-2 mb-4 text-[10px] font-bold text-ink-muted p-2 bg-cream/30 rounded-lg">
+                    <Store size={12} className="text-gold" />
+                    <span className="truncate">
+                      {magasins.find(m => m.id === user.magasinId)?.nom || "Magasin inconnu"}
+                    </span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between pt-4 border-t border-cream-dark mt-auto">
                   <div className="flex items-center gap-2">
                     {user.actif ? (
@@ -223,6 +233,16 @@ export default function UtilisateursPage() {
                     <option value="admin">Administrateur (Tout accès)</option>
                     <option value="lecteur">Lecteur (Consultation seule)</option>
                   </select>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Magasin Assigné</label>
+                  <select className="input" value={form.magasinId} onChange={e => setForm({ ...form, magasinId: e.target.value })}>
+                    <option value="">Aucun (Accès global Admin)</option>
+                    {magasins.map(m => (
+                      <option key={m.id} value={m.id}>{m.nom}</option>
+                    ))}
+                  </select>
+                  <p className="text-[9px] text-ink-muted italic px-1 mt-1">Obligatoire pour les Vendeurs et Gestionnaires.</p>
                 </div>
                 <button type="submit" disabled={modalLoading} className="w-full btn-primary py-3 mt-4">
                   {modalLoading ? "Création en cours..." : "Créer le compte"}

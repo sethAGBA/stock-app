@@ -3,14 +3,20 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { clientsService } from "@/lib/db";
 import type { Client } from "@/types";
-import { Plus, Search, Edit2, Trash2, X, Phone, Mail, MapPin, DollarSign, Clock, ArrowRight, Wallet, User, AlertCircle } from "lucide-react";
+import {
+    Plus, Search, Edit2, Trash2, X, Phone, Mail, MapPin,
+    DollarSign, Clock, ArrowRight, Wallet, User, AlertCircle,
+    ArrowUpRight
+} from "lucide-react";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 import { formatPrice, formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
+import { exportToExcel } from "@/lib/export";
+import { format } from "date-fns";
 
 export default function ClientsPage() {
-    const { appUser } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [clients, setClients] = useState<Client[]>([]);
     const [search, setSearch] = useState("");
     const [showModal, setShowModal] = useState(false);
@@ -28,10 +34,17 @@ export default function ClientsPage() {
 
     useEffect(() => {
         if (!appUser) return;
-        clientsService.getAll().then(setClients);
-    }, [appUser]);
+        // Pour les non-admins, on attend d'avoir un magasinId avant de charger
+        // pour éviter l'erreur de permission sur la requête globale.
+        if (appUser.role !== "admin" && !currentMagasinId) return;
 
-    const reload = () => clientsService.getAll().then(setClients);
+        clientsService.getAll(currentMagasinId).then(setClients);
+    }, [appUser, currentMagasinId]);
+
+    const reload = () => {
+        if (appUser?.role !== "admin" && !currentMagasinId) return;
+        clientsService.getAll(currentMagasinId).then(setClients);
+    };
 
     const filtered = clients.filter(c =>
         c.nom.toLowerCase().includes(search.toLowerCase()) ||
@@ -65,7 +78,7 @@ export default function ClientsPage() {
                 await clientsService.update(editing.id, form, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                 toast.success("Client modifié");
             } else {
-                await clientsService.create(form as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+                await clientsService.create(form as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` }, currentMagasinId);
                 toast.success("Client créé");
             }
             await reload();
@@ -103,6 +116,35 @@ export default function ClientsPage() {
         }
     };
 
+    const handleExportAll = () => {
+        const data = clients.map(c => ({
+            "Prénom": c.prenom || "",
+            "Nom": c.nom,
+            "Téléphone": c.telephone || "",
+            "Email": c.email || "",
+            "Adresse": c.adresse || "",
+            "Total Achats": c.totalAchats || 0,
+            "Solde Dette": c.soldeDette || 0,
+            "Date Création": c.createdAt ? format(c.createdAt, "dd/MM/yyyy") : ""
+        }));
+        exportToExcel(data, `Liste_Clients_${format(new Date(), "dd_MM_yyyy")}`, "Clients");
+    };
+
+    const handleExportBest = () => {
+        const best = [...clients]
+            .sort((a, b) => (b.totalAchats || 0) - (a.totalAchats || 0))
+            .slice(0, 20);
+
+        const data = best.map((c, i) => ({
+            "Rang": i + 1,
+            "Prénom": c.prenom || "",
+            "Nom": c.nom,
+            "Total Achats": c.totalAchats || 0,
+            "Téléphone": c.telephone || ""
+        }));
+        exportToExcel(data, `Meilleurs_Clients_${format(new Date(), "dd_MM_yyyy")}`, "Meilleurs Clients");
+    };
+
     return (
         <AppLayout>
             <div className="space-y-5">
@@ -111,11 +153,32 @@ export default function ClientsPage() {
                         <p className="text-[10px] font-mono tracking-widest text-ink-muted uppercase mb-1">Relation Client</p>
                         <h2 className="font-display text-3xl font-semibold text-ink">Clients</h2>
                     </div>
-                    {isGestionnaire && (
-                        <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-                            <Plus size={15} /> Nouveau client
-                        </button>
-                    )}
+                    <div className="flex items-center gap-3">
+                        <div className="flex bg-cream rounded-xl p-1 border border-cream-dark">
+                            <button
+                                onClick={handleExportAll}
+                                className="px-4 py-2 text-xs font-bold text-ink-muted hover:text-gold transition-colors flex items-center gap-2"
+                                title="Exporter toute la liste"
+                            >
+                                <ArrowRight size={14} className="rotate-90" />
+                                Tout
+                            </button>
+                            <div className="w-px h-4 bg-cream-dark self-center" />
+                            <button
+                                onClick={handleExportBest}
+                                className="px-4 py-2 text-xs font-bold text-ink-muted hover:text-gold transition-colors flex items-center gap-2"
+                                title="Exporter le Top 20"
+                            >
+                                <ArrowUpRight size={14} />
+                                Tops
+                            </button>
+                        </div>
+                        {isGestionnaire && (
+                            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+                                <Plus size={15} /> Nouveau client
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Search */}
@@ -157,7 +220,7 @@ export default function ClientsPage() {
                                 )}
                             </div>
 
-                            {c.soldeDette > 0 && isGestionnaire && (
+                            {c.soldeDette > 0 && (isGestionnaire || appUser?.role === "vendeur") && (
                                 <button
                                     onClick={() => {
                                         setSelectedClientForPayment(c);

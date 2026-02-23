@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { produitsService, clientsService, ventesService } from "@/lib/db";
-import type { Produit, Client, Vente, LigneVente } from "@/types";
+import { produitsService, clientsService, ventesService, etablissementService, magasinsService } from "@/lib/db";
+import type { Produit, Client, Vente, LigneVente, Etablissement, Magasin } from "@/types";
 import { Search, ShoppingCart, User, CreditCard, Trash2, Plus, Minus, CheckCircle, Receipt, Camera, ArrowDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
@@ -10,14 +10,12 @@ import clsx from "clsx";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ReceiptModal } from "@/components/common/ReceiptModal";
-import { etablissementService } from "@/lib/db";
-import type { Etablissement } from "@/types";
 import { formatPrice, formatCurrency } from "@/lib/format";
 
 const Scanner = dynamic(() => import("@/components/common/Scanner"), { ssr: false });
 
 export default function POSPage() {
-    const { appUser } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [produits, setProduits] = useState<Produit[]>([]);
     const [clients, setClients] = useState<Client[]>([]);
     const [search, setSearch] = useState("");
@@ -31,19 +29,34 @@ export default function POSPage() {
     const [showScanner, setShowScanner] = useState(false);
     const [clientSearch, setClientSearch] = useState("");
     const [showClientList, setShowClientList] = useState(false);
+    const [showNewClientModal, setShowNewClientModal] = useState(false);
+    const [newClientForm, setNewClientForm] = useState({ nom: "", prenom: "", telephone: "" });
+    const [savingClient, setSavingClient] = useState(false);
 
     // Receipt preview
     const [etablissement, setEtablissement] = useState<Etablissement | null>(null);
+    const [currentMagasin, setCurrentMagasin] = useState<Magasin | null>(null);
     const [previewVente, setPreviewVente] = useState<Vente | null>(null);
     const [lastVente, setLastVente] = useState<Vente | null>(null);
 
     useEffect(() => {
         if (!appUser) return;
-        const unsub = produitsService.onSnapshot(setProduits);
-        clientsService.getAll().then(setClients);
+        // Pour les non-admins, on attend d'avoir un magasinId avant de souscrire
+        // pour éviter l'erreur de permission sur la requête globale.
+        if (appUser.role !== "admin" && !currentMagasinId) return;
+
+        const unsub = produitsService.onSnapshot(setProduits, currentMagasinId);
+        clientsService.getAll(currentMagasinId).then(setClients);
         etablissementService.get().then(setEtablissement);
+
+        if (currentMagasinId) {
+            magasinsService.getById(currentMagasinId).then(setCurrentMagasin);
+        } else {
+            setCurrentMagasin(null);
+        }
+
         return unsub;
-    }, [appUser]);
+    }, [appUser, currentMagasinId]);
 
 
     const handleScan = (decodedText: string) => {
@@ -148,6 +161,30 @@ export default function POSPage() {
         c.telephone?.includes(clientSearch)
     );
 
+    const handleCreateQuickClient = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!appUser || !newClientForm.nom) return;
+        setSavingClient(true);
+        try {
+            const id = await clientsService.create(
+                { nom: newClientForm.nom, prenom: newClientForm.prenom, telephone: newClientForm.telephone, email: "", adresse: "" } as any,
+                { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` },
+                currentMagasinId
+            );
+            const updated = await clientsService.getAll(currentMagasinId);
+            setClients(updated);
+            setSelectedClientId(id as string);
+            setClientSearch(`${newClientForm.prenom} ${newClientForm.nom}`.trim());
+            setShowNewClientModal(false);
+            setNewClientForm({ nom: "", prenom: "", telephone: "" });
+            toast.success("Client créé et sélectionné");
+        } catch (err: any) {
+            toast.error(err.message || "Erreur");
+        } finally {
+            setSavingClient(false);
+        }
+    };
+
     const handleCheckout = async () => {
         if (cart.length === 0) return;
         if (!appUser) return;
@@ -171,7 +208,8 @@ export default function POSPage() {
                 resteAPayer,
                 modePaiement: resteAPayer > 0 ? "credit" : modePaiement,
                 utilisateurId: appUser.uid,
-                utilisateurNom: `${appUser.prenom} ${appUser.nom}`
+                utilisateurNom: `${appUser.prenom} ${appUser.nom}`,
+                magasinId: currentMagasinId
             };
 
             const venteRef = await ventesService.enregistrer(venteData);
@@ -223,7 +261,12 @@ export default function POSPage() {
                 {previewVente && (
                     <ReceiptModal
                         vente={previewVente}
-                        etablissement={etablissement}
+                        etablissement={etablissement ? {
+                            ...etablissement,
+                            nom: currentMagasin?.nom || etablissement.nom,
+                            adresse: currentMagasin?.adresse || etablissement.adresse,
+                            telephone: currentMagasin?.telephone || etablissement.telephone,
+                        } : null}
                         onClose={() => setPreviewVente(null)}
                     />
                 )}
@@ -360,70 +403,88 @@ export default function POSPage() {
                         <div className="p-4 bg-cream/30 border-t border-cream-dark space-y-3">
                             <div>
                                 <label className="text-[10px] uppercase tracking-wider text-ink-muted mb-1 block">Client</label>
-                                <div className="relative">
-                                    <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-                                    <input
-                                        type="text"
-                                        placeholder="Rechercher un client..."
-                                        value={clientSearch}
-                                        onChange={e => {
-                                            setClientSearch(e.target.value);
-                                            setShowClientList(true);
-                                        }}
-                                        onFocus={() => setShowClientList(true)}
-                                        className="input pl-9 text-xs py-2"
-                                    />
-                                    {selectedClientId && (
-                                        <button
-                                            onClick={() => {
-                                                setSelectedClientId("");
-                                                setClientSearch("");
+                                <div className="relative flex gap-2">
+                                    <div className="relative flex-1">
+                                        <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                                        <input
+                                            type="text"
+                                            placeholder="Rechercher un client..."
+                                            value={clientSearch}
+                                            onChange={e => {
+                                                setClientSearch(e.target.value);
+                                                setShowClientList(true);
                                             }}
-                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink-muted hover:text-red-500"
-                                        >
-                                            <Minus size={12} />
-                                        </button>
-                                    )}
-
-                                    {showClientList && (
-                                        <div className="absolute z-10 w-full mt-1 bg-white border border-cream-dark rounded-xl shadow-2xl max-h-48 overflow-auto animate-in fade-in zoom-in-95 duration-200">
-                                            <div
-                                                className="p-3 text-xs hover:bg-cream cursor-pointer border-b border-cream-dark flex items-center justify-between"
+                                            onFocus={() => setShowClientList(true)}
+                                            className="input pl-9 text-xs py-2"
+                                        />
+                                        {selectedClientId && (
+                                            <button
                                                 onClick={() => {
                                                     setSelectedClientId("");
                                                     setClientSearch("");
-                                                    setShowClientList(false);
                                                 }}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-ink-muted hover:text-red-500"
                                             >
-                                                <span className="font-bold text-ink-muted italic">Client de passage</span>
-                                            </div>
-                                            {filteredClients.map(c => (
+                                                <Minus size={12} />
+                                            </button>
+                                        )}
+
+                                        {showClientList && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white border border-cream-dark rounded-xl shadow-2xl max-h-48 overflow-auto animate-in fade-in zoom-in-95 duration-200">
                                                 <div
-                                                    key={c.id}
+                                                    className="p-3 text-xs hover:bg-cream cursor-pointer border-b border-cream-dark flex items-center justify-between"
                                                     onClick={() => {
-                                                        setSelectedClientId(c.id);
-                                                        setClientSearch(`${c.prenom} ${c.nom}`);
+                                                        setSelectedClientId("");
+                                                        setClientSearch("");
                                                         setShowClientList(false);
                                                     }}
-                                                    className={clsx(
-                                                        "p-3 text-xs hover:bg-cream cursor-pointer flex flex-col gap-0.5 transition-colors",
-                                                        selectedClientId === c.id ? "bg-gold/10 border-l-2 border-gold" : ""
-                                                    )}
                                                 >
-                                                    <span className="font-bold text-ink">{c.prenom} {c.nom}</span>
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-[10px] text-ink-muted">{c.telephone || "Pas de téléphone"}</span>
-                                                        {c.soldeDette > 0 && (
-                                                            <span className="text-[9px] font-black text-red-500 uppercase">Dette: {formatCurrency(c.soldeDette || 0)}</span>
-                                                        )}
-                                                    </div>
+                                                    <span className="font-bold text-ink-muted italic">Client de passage</span>
                                                 </div>
-                                            ))}
-                                            {filteredClients.length === 0 && (
-                                                <div className="p-4 text-center text-xs text-ink-muted">Aucun client trouvé</div>
-                                            )}
-                                        </div>
-                                    )}
+                                                {filteredClients.map(c => (
+                                                    <div
+                                                        key={c.id}
+                                                        onClick={() => {
+                                                            setSelectedClientId(c.id);
+                                                            setClientSearch(`${c.prenom} ${c.nom}`);
+                                                            setShowClientList(false);
+                                                        }}
+                                                        className={clsx(
+                                                            "p-3 text-xs hover:bg-cream cursor-pointer flex flex-col gap-0.5 transition-colors",
+                                                            selectedClientId === c.id ? "bg-gold/10 border-l-2 border-gold" : ""
+                                                        )}
+                                                    >
+                                                        <span className="font-bold text-ink">{c.prenom} {c.nom}</span>
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-[10px] text-ink-muted">{c.telephone || "Pas de téléphone"}</span>
+                                                            {c.soldeDette > 0 && (
+                                                                <span className="text-[9px] font-black text-red-500 uppercase">Dette: {formatCurrency(c.soldeDette || 0)}</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {filteredClients.length === 0 && (
+                                                    <div className="p-3 text-center text-xs text-ink-muted">
+                                                        <p className="mb-2">Aucun client trouvé</p>
+                                                        <button
+                                                            onClick={() => { setShowClientList(false); setShowNewClientModal(true); setNewClientForm({ nom: clientSearch.split(" ").slice(-1)[0] || "", prenom: clientSearch.split(" ").slice(0, -1).join(" ") || "", telephone: "" }); }}
+                                                            className="flex items-center gap-1 mx-auto text-gold font-bold hover:underline"
+                                                        >
+                                                            <Plus size={12} /> Créer ce client
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowClientList(false); setShowNewClientModal(true); setNewClientForm({ nom: "", prenom: "", telephone: "" }); }}
+                                        className="px-3 py-2 bg-gold/10 text-gold rounded-xl hover:bg-gold hover:text-white transition-all font-bold flex items-center gap-1 text-xs shrink-0"
+                                        title="Créer un nouveau client"
+                                    >
+                                        <Plus size={14} />
+                                    </button>
                                 </div>
                                 {showClientList && (
                                     <div className="fixed inset-0 z-0" onClick={() => setShowClientList(false)} />
@@ -548,6 +609,64 @@ export default function POSPage() {
                     etablissement={etablissement}
                     onClose={() => setPreviewVente(null)}
                 />
+            )}
+
+            {/* Quick Client Creation Modal */}
+            {showNewClientModal && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-cream-dark">
+                            <div className="flex items-center gap-2">
+                                <User size={16} className="text-gold" />
+                                <h3 className="font-display text-base font-bold">Nouveau client rapide</h3>
+                            </div>
+                            <button onClick={() => setShowNewClientModal(false)} className="text-ink-muted hover:text-ink">
+                                <Minus size={16} />
+                            </button>
+                        </div>
+                        <form onSubmit={handleCreateQuickClient} className="px-6 py-5 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-ink-muted tracking-widest pl-1 block mb-1">Prénom</label>
+                                    <input
+                                        value={newClientForm.prenom}
+                                        onChange={e => setNewClientForm(f => ({ ...f, prenom: e.target.value }))}
+                                        className="input text-sm"
+                                        placeholder="Jean"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-black text-ink-muted tracking-widest pl-1 block mb-1">Nom *</label>
+                                    <input
+                                        required
+                                        value={newClientForm.nom}
+                                        onChange={e => setNewClientForm(f => ({ ...f, nom: e.target.value }))}
+                                        className="input text-sm"
+                                        placeholder="Dupont"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-black text-ink-muted tracking-widest pl-1 block mb-1">Téléphone</label>
+                                <input
+                                    value={newClientForm.telephone}
+                                    onChange={e => setNewClientForm(f => ({ ...f, telephone: e.target.value }))}
+                                    className="input text-sm"
+                                    placeholder="+228 XX XX XX XX"
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-1">
+                                <button type="button" onClick={() => setShowNewClientModal(false)} className="flex-1 py-2.5 text-sm font-bold text-ink-muted hover:bg-cream rounded-xl transition-all">
+                                    Annuler
+                                </button>
+                                <button type="submit" disabled={savingClient} className="flex-[2] btn-primary py-2.5 font-bold text-sm">
+                                    {savingClient ? "Création..." : "Créer & Sélectionner"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             )}
         </AppLayout>
     );

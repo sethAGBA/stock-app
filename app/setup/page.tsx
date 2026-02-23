@@ -58,7 +58,7 @@ export default function SetupPage() {
                 email: form.email,
                 role: "admin",
                 actif: true,
-            });
+            }, { uid, nom: `${form.prenom} ${form.nom}` });
 
             toast.success("Administrateur configuré avec succès !");
             router.push("/login"); // Le middleware ou l'auth context devrait prendre le relais
