@@ -67,7 +67,7 @@ export default function DashboardPage() {
   const today = new Date().toDateString();
   const mvtToday = mouvements.filter(m => m.createdAt.toDateString() === today);
   const entreesToday = mvtToday.filter(m => m.type === "entree").reduce((a, m) => a + m.quantite, 0);
-  const sortiesToday = mvtToday.filter(m => m.type === "sortie").reduce((a, m) => a + m.quantite, 0);
+  const sortiesToday = mvtToday.filter(m => m.type === "sortie" || m.type === "usage_interne").reduce((a, m) => a + m.quantite, 0);
 
   // Profit d'aujourd'hui
   const ventesToday = ventes.filter(v => v.createdAt.toDateString() === today);
@@ -83,7 +83,7 @@ export default function DashboardPage() {
     return {
       jour: format(d, "EEE", { locale: fr }),
       entrées: mvts.filter(m => m.type === "entree").reduce((a, m) => a + m.quantite, 0),
-      sorties: mvts.filter(m => m.type === "sortie").reduce((a, m) => a + m.quantite, 0),
+      sorties: mvts.filter(m => m.type === "sortie" || m.type === "usage_interne").reduce((a, m) => a + m.quantite, 0),
     };
   });
 

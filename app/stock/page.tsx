@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { mouvementsService, produitsService } from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
-import type { Mouvement, Produit } from "@/types";
+import type { Mouvement, Produit, TypeMouvement } from "@/types";
 import { ArrowUpCircle, ArrowDownCircle, RefreshCw, X, Download } from "lucide-react";
 import { exportToCSV } from "@/lib/export-utils";
 import { format } from "date-fns";
@@ -17,10 +17,10 @@ export default function StockPage() {
   const [produits, setProduits] = useState<Produit[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [filtre, setFiltre] = useState<"tous" | "entree" | "sortie" | "ajustement">("tous");
+  const [filtre, setFiltre] = useState<"tous" | TypeMouvement>("tous");
 
   const [form, setForm] = useState({
-    produitId: "", type: "entree" as "entree" | "sortie" | "ajustement",
+    produitId: "", type: "entree" as TypeMouvement,
     quantite: 1, motif: "",
   });
 
@@ -98,13 +98,13 @@ export default function StockPage() {
         </div>
 
         {/* Filtres */}
-        <div className="flex gap-2">
-          {(["tous", "entree", "sortie", "ajustement"] as const).map(f => (
+        <div className="flex gap-2 flex-wrap">
+          {(["tous", "entree", "sortie", "usage_interne", "ajustement"] as const).map(f => (
             <button key={f} onClick={() => setFiltre(f)}
               className={clsx("px-4 py-1.5 rounded-full text-xs font-medium transition-all capitalize",
                 filtre === f ? "bg-gold text-white" : "bg-white text-ink-muted border border-cream-dark hover:border-gold"
               )}>
-              {f === "tous" ? "Tous" : f === "entree" ? "Entrées" : f === "sortie" ? "Sorties" : "Ajustements"}
+              {f === "tous" ? "Tous" : f === "entree" ? "Entrées" : f === "sortie" ? "Sorties" : f === "usage_interne" ? "Usages Internes" : "Ajustements"}
             </button>
           ))}
         </div>
@@ -129,11 +129,11 @@ export default function StockPage() {
                 <tr key={m.id} className="hover:bg-cream/50 transition-colors">
                   <td className="px-4 py-3">
                     <div className={clsx("w-7 h-7 rounded-full flex items-center justify-center",
-                      m.type === "entree" ? "bg-green-100" : m.type === "sortie" ? "bg-red-100" : "bg-amber-100"
+                      m.type === "entree" ? "bg-green-100" : (m.type === "sortie" || m.type === "usage_interne") ? "bg-red-100" : "bg-amber-100"
                     )}>
                       {m.type === "entree"
                         ? <ArrowUpCircle size={15} className="text-green-600" />
-                        : m.type === "sortie"
+                        : (m.type === "sortie" || m.type === "usage_interne")
                           ? <ArrowDownCircle size={15} className="text-red-600" />
                           : <RefreshCw size={15} className="text-amber-600" />}
                     </div>
@@ -144,9 +144,9 @@ export default function StockPage() {
                   </td>
                   <td className={clsx("px-4 py-3 text-right font-bold",
                     m.type === "entree" ? "text-green-600" :
-                      m.type === "sortie" ? "text-red-600" : "text-amber-600"
+                      (m.type === "sortie" || m.type === "usage_interne") ? "text-red-600" : "text-amber-600"
                   )}>
-                    {m.type === "entree" ? "+" : m.type === "sortie" ? "-" : ""}{m.quantite}
+                    {m.type === "entree" ? "+" : (m.type === "sortie" || m.type === "usage_interne") ? "-" : ""}{m.quantite}
                   </td>
                   <td className="px-4 py-3 text-right text-ink-muted">{m.stockAvant}</td>
                   <td className="px-4 py-3 text-right font-medium text-ink">{m.stockApres}</td>
@@ -176,14 +176,14 @@ export default function StockPage() {
             <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
               <div>
                 <label className="label">Type de mouvement *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["entree", "sortie", "ajustement"] as const).map(t => (
+                <div className="grid grid-cols-2 gap-2">
+                  {(["entree", "sortie", "usage_interne", "ajustement"] as const).map(t => (
                     <button key={t} type="button"
                       onClick={() => setForm(f => ({ ...f, type: t }))}
                       className={clsx("py-2 rounded-lg text-xs font-medium capitalize border transition-all",
                         form.type === t ? "bg-gold text-white border-gold" : "border-cream-dark text-ink-muted hover:border-gold"
                       )}>
-                      {t === "entree" ? "Entrée" : t === "sortie" ? "Sortie" : "Ajustement"}
+                      {t === "entree" ? "Entrée" : t === "sortie" ? "Sortie" : t === "usage_interne" ? "Usage Interne" : "Ajustement"}
                     </button>
                   ))}
                 </div>

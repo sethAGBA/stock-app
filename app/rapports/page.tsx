@@ -52,7 +52,7 @@ export default function RapportsPage() {
         body: mouvements.map(m => [
           format(m.createdAt, "dd/MM/yy HH:mm"),
           m.produitNom,
-          m.type === "entree" ? "Entrée" : m.type === "sortie" ? "Sortie" : "Ajustement",
+          m.type === "entree" ? "Entrée" : m.type === "sortie" ? "Sortie" : m.type === "usage_interne" ? "Usage Interne" : "Ajustement",
           m.quantite,
           m.stockAvant,
           m.stockApres,

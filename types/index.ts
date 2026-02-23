@@ -140,7 +140,7 @@ export interface Produit {
 }
 
 // ── Mouvement de stock ────────────────────────────────────
-export type TypeMouvement = "entree" | "sortie" | "ajustement";
+export type TypeMouvement = "entree" | "sortie" | "ajustement" | "usage_interne";
 
 export interface Mouvement {
   id: string;

@@ -288,7 +288,7 @@ export const mouvementsService = {
       const stockAvant = produit.stockActuel;
       const stockApres = type === "entree"
         ? stockAvant + quantite
-        : type === "sortie"
+        : (type === "sortie" || type === "usage_interne")
           ? stockAvant - quantite
           : quantite; // ajustement direct
 
