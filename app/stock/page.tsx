@@ -26,6 +26,8 @@ export default function StockPage() {
 
   useEffect(() => {
     if (!appUser) return;
+    if (appUser.role !== "admin" && !currentMagasinId) return;
+
     const unsubM = mouvementsService.onSnapshot(setMouvements, currentMagasinId);
     const unsubP = produitsService.onSnapshot(setProduits, currentMagasinId);
     return () => { unsubM(); unsubP(); };
@@ -87,7 +89,7 @@ export default function StockPage() {
               <Download size={18} />
               <span className="hidden md:inline">Exporter</span>
             </button>
-            {appUser?.role !== "lecteur" && (
+            {(appUser?.role === "admin" || appUser?.role === "gestionnaire") && (
               <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
                 <RefreshCw size={14} /> Nouveau mouvement
               </button>

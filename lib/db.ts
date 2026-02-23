@@ -5,7 +5,7 @@ import {
 } from "firebase/firestore";
 import { format } from "date-fns";
 import { db } from "./firebase";
-import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession, SortieCaisse, Magasin } from "@/types";
+import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession, SortieCaisse, Magasin, RetourClient } from "@/types";
 
 // ── Collections ───────────────────────────────────────────
 const COLS = {
@@ -24,6 +24,7 @@ const COLS = {
   inventaires: "inventaires",
   sortiesCaisse: "sorties_caisse",
   magasins: "magasins",
+  retours: "retours_client",
 };
 
 const toDate = (ts: any): Date =>
@@ -161,9 +162,12 @@ export const sortiesCaisseService = {
 // ════════════════════════════════════════
 export const produitsService = {
   async getAll(magasinId?: string | null): Promise<Produit[]> {
-    const q = query(collection(db, COLS.produits), orderBy("designation"));
+    let q = query(collection(db, COLS.produits), orderBy("designation"));
+    if (magasinId) {
+      q = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+    }
     const snap = await getDocs(q);
-    let all = snap.docs.map(d => {
+    return snap.docs.map(d => {
       const data = d.data();
       return {
         id: d.id,
@@ -173,10 +177,6 @@ export const produitsService = {
         datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
       } as Produit;
     });
-    if (magasinId) {
-      all = all.filter(p => !p.magasinId || p.magasinId === magasinId);
-    }
-    return all;
   },
 
   async getById(id: string): Promise<Produit | null> {
@@ -236,16 +236,20 @@ export const produitsService = {
     });
   },
 
-  async getEnAlerte(): Promise<Produit[]> {
-    const all = await this.getAll();
+  async getEnAlerte(magasinId?: string | null): Promise<Produit[]> {
+    const all = await this.getAll(magasinId);
     return all.filter(p => p.stockActuel <= p.stockMinimum);
   },
 
   onSnapshot(callback: (produits: Produit[]) => void, magasinId?: string | null) {
-    const q = query(collection(db, COLS.produits), orderBy("designation"));
+    let q = query(collection(db, COLS.produits), orderBy("designation"));
+    if (magasinId) {
+      q = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+    }
+
     return onSnapshot(q,
       snap => {
-        let all = snap.docs.map(d => {
+        const all = snap.docs.map(d => {
           const data = d.data();
           return {
             id: d.id,
@@ -255,9 +259,6 @@ export const produitsService = {
             datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
           } as Produit;
         });
-        if (magasinId) {
-          all = all.filter(p => !p.magasinId || p.magasinId === magasinId);
-        }
         callback(all);
       },
       error => {
@@ -600,13 +601,12 @@ export const utilisateursService = {
   },
 
   async getAll(magasinId?: string | null): Promise<AppUser[]> {
-    const q = query(collection(db, COLS.utilisateurs), orderBy("nom"));
-    const snap = await getDocs(q);
-    let all = snap.docs.map(d => ({ uid: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as AppUser));
+    let q = query(collection(db, COLS.utilisateurs), orderBy("nom"));
     if (magasinId) {
-      all = all.filter(u => !u.magasinId || u.magasinId === magasinId);
+      q = query(collection(db, COLS.utilisateurs), where("magasinId", "==", magasinId), orderBy("nom"));
     }
-    return all;
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ uid: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as AppUser));
   },
 
   async create(uid: string, data: Omit<AppUser, "uid" | "createdAt">, admin: { uid: string; nom: string }): Promise<void> {
@@ -644,13 +644,12 @@ export const utilisateursService = {
 // ════════════════════════════════════════
 export const clientsService = {
   async getAll(magasinId?: string | null): Promise<Client[]> {
-    const q = query(collection(db, COLS.clients), orderBy("nom"));
-    const snap = await getDocs(q);
-    let all = snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt), derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined } as Client));
+    let q = query(collection(db, COLS.clients), orderBy("nom"));
     if (magasinId) {
-      all = all.filter(c => !c.magasinId || c.magasinId === magasinId);
+      q = query(collection(db, COLS.clients), where("magasinId", "==", magasinId), orderBy("nom"));
     }
-    return all;
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt), derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined } as Client));
   },
 
   async create(data: Omit<Client, "id" | "createdAt" | "totalAchats" | "soldeDette">, utilisateur: { uid: string; nom: string }, magasinId?: string | null): Promise<string> {
@@ -909,7 +908,9 @@ export const ventesService = {
 
   async getRecent(limitN = 50, magasinId?: string | null): Promise<Vente[]> {
     let q = query(collection(db, COLS.ventes), orderBy("createdAt", "desc"), limit(limitN));
-    if (magasinId) q = query(collection(db, COLS.ventes), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(limitN));
+    if (magasinId) {
+      q = query(collection(db, COLS.ventes), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"), limit(limitN));
+    }
     const snap = await getDocs(q);
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Vente));
   },
@@ -1373,3 +1374,128 @@ export const inventaireService = {
   }
 };
 
+// ════════════════════════════════════════
+// RETOURS CLIENT
+// ════════════════════════════════════════
+export const retoursService = {
+  async enregistrer(data: Omit<RetourClient, "id" | "createdAt">): Promise<string> {
+    const retourRef = doc(collection(db, COLS.retours));
+
+    await runTransaction(db, async (tx) => {
+      // 1. Lectures (Reads)
+      const produitSnaps = await Promise.all(
+        data.lignes.map(l => tx.get(doc(db, COLS.produits, l.produitId)))
+      );
+
+      let clientSnap = null;
+      if (data.clientId) {
+        clientSnap = await tx.get(doc(db, COLS.clients, data.clientId));
+      }
+
+      // 2. Opérations d'écriture (Writes)
+      data.lignes.forEach((ligne, i) => {
+        const produitSnap = produitSnaps[i];
+        if (!produitSnap.exists()) throw new Error(`Produit ${ligne.produitNom} introuvable`);
+
+        const produit = produitSnap.data() as Produit;
+        const produitRef = doc(db, COLS.produits, ligne.produitId);
+
+        // Restock
+        tx.update(produitRef, {
+          stockActuel: produit.stockActuel + ligne.quantite,
+          updatedAt: serverTimestamp()
+        });
+
+        // Mouvement de stock
+        const mvtRef = doc(collection(db, COLS.mouvements));
+        tx.set(mvtRef, {
+          produitId: ligne.produitId,
+          produitRef: ligne.produitRef,
+          produitNom: ligne.produitNom,
+          type: "entree",
+          quantite: ligne.quantite,
+          stockAvant: produit.stockActuel,
+          stockApres: produit.stockActuel + ligne.quantite,
+          motif: "Retour Client " + retourRef.id,
+          utilisateurId: data.utilisateurId,
+          utilisateurNom: data.utilisateurNom,
+          magasinId: data.magasinId || null,
+          createdAt: serverTimestamp(),
+        });
+      });
+
+      // Ajustement client
+      if (clientSnap && clientSnap.exists()) {
+        const clientData = clientSnap.data();
+        const clientRef = doc(db, COLS.clients, data.clientId!);
+
+        let updateData: any = {
+          totalAchats: Math.max(0, (clientData.totalAchats || 0) - data.totalTTC),
+        };
+
+        // Si remboursement mode est réduction de dette
+        if (data.remboursementMode === "credit_reduc") {
+          updateData.soldeDette = Math.max(0, (clientData.soldeDette || 0) - data.totalTTC);
+        }
+
+        tx.update(clientRef, updateData);
+      }
+
+      // Record return
+      tx.set(retourRef, {
+        ...data,
+        createdAt: serverTimestamp(),
+      });
+
+      // Audit log (inside transaction block technically but ideally outside for UI speed)
+      // For consistency with other services, we'll return the ID and then the caller can log or we log here.
+    });
+
+    await auditService.enregistrer({
+      type: "vente",
+      action: "RETOUR_CLIENT",
+      details: `Retour Client #${retourRef.id.slice(0, 8)} - Total: ${data.totalTTC} F - Motif: ${data.motif}`,
+      utilisateurId: data.utilisateurId,
+      utilisateurNom: data.utilisateurNom,
+    });
+
+    return retourRef.id;
+  },
+
+  async getAll(magasinId?: string | null): Promise<RetourClient[]> {
+    let q = query(collection(db, COLS.retours), orderBy("createdAt", "desc"));
+    if (magasinId) {
+      q = query(collection(db, COLS.retours), where("magasinId", "==", magasinId), orderBy("createdAt", "desc"));
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as RetourClient));
+  },
+
+  async getForDateRange(start: Date, end: Date, magasinId?: string | null): Promise<RetourClient[]> {
+    let q = query(
+      collection(db, COLS.retours),
+      where("createdAt", ">=", start),
+      where("createdAt", "<=", end),
+      orderBy("createdAt", "desc")
+    );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.retours),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+    }
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as RetourClient));
+  }
+};

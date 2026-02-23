@@ -23,14 +23,17 @@ interface NotificationContextType {
 const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
-    const { user } = useAuth();
+    const { appUser, currentMagasinId } = useAuth();
     const [notifications, setNotifications] = useState<Notification[]>([]);
 
     useEffect(() => {
-        if (!user) {
+        if (!appUser) {
             setNotifications([]);
             return;
         }
+
+        // Pour les non-admins, on attend d'avoir un magasinId
+        if (appUser.role !== "admin" && !currentMagasinId) return;
 
         // Surveillance en temps réel des stocks
         const unsub = produitsService.onSnapshot((produits) => {
@@ -88,10 +91,10 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                 // Fusion simple pour cet exercice
                 return alerts.sort((a, b) => b.date.getTime() - a.date.getTime());
             });
-        });
+        }, currentMagasinId);
 
         return unsub;
-    }, [user]);
+    }, [appUser, currentMagasinId]);
 
     const unreadCount = notifications.filter(n => !n.read).length;
 

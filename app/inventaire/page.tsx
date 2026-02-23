@@ -42,6 +42,8 @@ export default function InventairePage() {
 
     useEffect(() => {
         if (!appUser) return;
+        if (appUser.role !== "admin" && !currentMagasinId) return;
+
         setLoading(true);
         Promise.all([
             produitsService.getAll(currentMagasinId),

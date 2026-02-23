@@ -104,6 +104,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── Retours ──
+    match /retours_client/{id} {
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
     // ── Commandes Fournisseurs ──
     match /commandes_fournisseurs/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);

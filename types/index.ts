@@ -284,3 +284,26 @@ export interface SortieCaisse {
   magasinId?: string | null;
   createdAt: Date;
 }
+// ── Retour Client ─────────────────────────────────────────
+export interface RetourClient {
+  id: string;
+  venteId: string;
+  clientId?: string | null;
+  clientNom: string;
+  lignes: {
+    produitId: string;
+    produitRef: string;
+    produitNom: string;
+    quantite: number;
+    prixUnitaire: number;
+    total: number;
+  }[];
+  totalHT: number;
+  totalTTC: number;
+  remboursementMode: "especes" | "avoir" | "credit_reduc";
+  motif: string;
+  utilisateurId: string;
+  utilisateurNom: string;
+  magasinId?: string | null;
+  createdAt: Date;
+}

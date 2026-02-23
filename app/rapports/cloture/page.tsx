@@ -28,6 +28,7 @@ export default function CashClosurePage() {
 
     useEffect(() => {
         if (!appUser) return;
+        if (appUser.role !== "admin" && !currentMagasinId) return;
 
         // Initialiser l'utilisateur sélectionné si vide
         if (!selectedSellerId) {

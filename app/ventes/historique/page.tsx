@@ -5,11 +5,12 @@ import { ventesService, etablissementService, utilisateursService } from "@/lib/
 import type { Vente, Etablissement, AppUser } from "@/types";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Printer, ArrowLeft, Search, User, Download, ChevronDown } from "lucide-react";
+import { Printer, ArrowLeft, Search, User, Download, ChevronDown, RotateCcw } from "lucide-react";
 import { exportToCSV, exportToExcel } from "@/lib/export";
 import Link from "next/link";
 import { ReceiptModal } from "@/components/common/ReceiptModal";
 import { CancellationModal } from "@/components/stock/CancellationModal";
+import RetourModal from "@/components/modules/RetourModal";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
 import clsx from "clsx";
@@ -26,11 +27,14 @@ export default function HistoriqueVentesPage() {
     const [selectedStatus, setSelectedStatus] = useState<string>("all");
     const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
     const [venteToCancel, setVenteToCancel] = useState<Vente | null>(null);
+    const [venteToReturn, setVenteToReturn] = useState<Vente | null>(null);
 
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
 
     useEffect(() => {
         if (!appUser) return;
+        if (appUser.role !== "admin" && !currentMagasinId) return;
+
         ventesService.getRecent(100, currentMagasinId).then(setVentes);
         etablissementService.get().then(setEtablissement);
         if (isGestionnaire) {
@@ -103,6 +107,10 @@ export default function HistoriqueVentesPage() {
         } catch (err: any) {
             toast.error(err.message || "Erreur lors de l'annulation");
         }
+    };
+
+    const handleRetourSuccess = () => {
+        ventesService.getRecent(100, currentMagasinId).then(setVentes);
     };
 
     return (
@@ -255,13 +263,22 @@ export default function HistoriqueVentesPage() {
                                             <Printer size={18} />
                                         </button>
                                         {isGestionnaire && vente.statut !== "annulee" && (
-                                            <button
-                                                onClick={() => setVenteToCancel(vente)}
-                                                className="p-2 hover:bg-red-50 text-ink-muted hover:text-red-500 rounded transition-colors"
-                                                title="Annuler la vente"
-                                            >
-                                                <ArrowLeft size={18} className="rotate-45" />
-                                            </button>
+                                            <>
+                                                <button
+                                                    onClick={() => setVenteToCancel(vente)}
+                                                    className="p-2 hover:bg-red-50 text-ink-muted hover:text-red-500 rounded transition-colors"
+                                                    title="Annuler la vente"
+                                                >
+                                                    <ArrowLeft size={18} className="rotate-45" />
+                                                </button>
+                                                <button
+                                                    onClick={() => setVenteToReturn(vente)}
+                                                    className="p-2 hover:bg-gold/10 text-ink-muted hover:text-gold rounded transition-colors"
+                                                    title="Effectuer un retour"
+                                                >
+                                                    <RotateCcw size={18} />
+                                                </button>
+                                            </>
                                         )}
                                     </td>
                                 </tr>
@@ -290,6 +307,14 @@ export default function HistoriqueVentesPage() {
                         commandeId={venteToCancel.id}
                         onClose={() => setVenteToCancel(null)}
                         onConfirm={handleAnnuler}
+                    />
+                )}
+
+                {venteToReturn && (
+                    <RetourModal
+                        vente={venteToReturn}
+                        onClose={() => setVenteToReturn(null)}
+                        onSuccess={handleRetourSuccess}
                     />
                 )}
             </div>

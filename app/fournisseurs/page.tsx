@@ -246,7 +246,7 @@ export default function FournisseursPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => openEdit(selectedFournisseur)} className="btn-secondary py-2">Modifier</button>
+                    {isGestionnaire && <button onClick={() => openEdit(selectedFournisseur)} className="btn-secondary py-2">Modifier</button>}
                     {isAdmin && <button onClick={() => handleDelete(selectedFournisseur.id)} className="text-red-400 hover:text-red-600 p-2 transition-colors"><Trash2 size={18} /></button>}
                   </div>
                 </div>

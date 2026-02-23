@@ -4,10 +4,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { useNotifications } from "@/lib/notification-context";
 import NotificationDrawer from "./NotificationDrawer";
+import LogoutModal from "./LogoutModal";
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Package, ArrowLeftRight, Users,
-  Truck, FileBarChart, LogOut, Bell, ChevronRight, ShoppingCart, Save, Settings, Receipt, Store
+  Truck, FileBarChart, LogOut, Bell, ChevronRight, ShoppingCart, Save, Settings, Receipt, Store, RotateCcw
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -17,6 +18,7 @@ const NAV = [
   { href: "/stock", label: "Mouvements", icon: ArrowLeftRight },
   { href: "/inventaire", label: "Inventaire", icon: Save, gestionnaireOnly: true },
   { href: "/ventes", label: "Ventes (POS)", icon: ShoppingCart },
+  { href: "/retours", label: "Retours Client", icon: RotateCcw },
   { href: "/rapports/sorties", label: "Sorties de Caisse", icon: Receipt },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/fournisseurs", label: "Fournisseurs", icon: Truck },
@@ -34,29 +36,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { appUser, logout, currentMagasin, currentMagasinId, magasins, setMagasinById } = useAuth();
   const { unreadCount } = useNotifications();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
     await logout();
     router.push("/login");
   };
 
   const navItems = NAV.filter(n => {
-    // Admin only
-    if (n.adminOnly) return appUser?.role === "admin";
-    // Gestionnaire or Admin
-    if (n.gestionnaireOnly) return appUser?.role === "admin" || appUser?.role === "gestionnaire";
+    if (!appUser) return false;
+    const role = appUser.role;
 
-    // Strict restriction for sellers: only POS and Clients
-    if (appUser?.role === "vendeur") {
-      return n.href === "/ventes" || n.href === "/clients";
+    // Admin has access to everything
+    if (role === "admin") return true;
+
+    // Direct Admin-only pages
+    if (n.adminOnly) return false;
+
+    // Gestionnaire logic
+    if (n.gestionnaireOnly) {
+      return role === "gestionnaire";
     }
 
-    return true; // Visible par tous (Gestionnaire et Admin par défaut si pas admin/gestOnly)
+    // Role-specific restrictions
+    if (role === "vendeur") {
+      const allowedPaths = [
+        "/produits", "/stock", "/ventes",
+        "/retours", "/clients"
+      ];
+      return allowedPaths.includes(n.href);
+    }
+
+    if (role === "lecteur") {
+      const forbiddenPaths = ["/ventes", "/admin/logs", "/utilisateurs", "/admin/magasins", "/configuration"];
+      return !forbiddenPaths.includes(n.href);
+    }
+
+    return true;
   });
 
   return (
@@ -183,6 +208,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </main>
 
       <NotificationDrawer isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
+      <LogoutModal
+        isOpen={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+      />
     </div>
   );
 }

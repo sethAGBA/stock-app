@@ -37,6 +37,8 @@ export default function SortiesCaissePage() {
 
     useEffect(() => {
         if (!appUser) return;
+        if (appUser.role !== "admin" && !currentMagasinId) return;
+
         sortiesCaisseService.getAll(currentMagasinId).then(data => {
             setSorties(data);
             setLoading(false);

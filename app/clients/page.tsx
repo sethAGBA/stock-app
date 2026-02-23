@@ -173,7 +173,7 @@ export default function ClientsPage() {
                                 Tops
                             </button>
                         </div>
-                        {isGestionnaire && (
+                        {(isGestionnaire || appUser?.role === "vendeur") && (
                             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
                                 <Plus size={15} /> Nouveau client
                             </button>
@@ -196,7 +196,7 @@ export default function ClientsPage() {
                                     <User size={20} />
                                 </div>
                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {isGestionnaire && (
+                                    {(isGestionnaire || appUser?.role === "vendeur") && (
                                         <button onClick={() => openEdit(c)} className="p-1.5 text-ink-muted hover:text-gold hover:bg-gold/10 rounded-md">
                                             <Edit2 size={13} />
                                         </button>
