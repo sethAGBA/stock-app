@@ -13,7 +13,7 @@ Ce document sert de guide de référence pour l'évolution du logiciel de gestio
 ## 🟡 Phase 2 : Sécurité & Administratif (En cours)
 - [x] **Middleware & RBAC** : Gestion fine des droits d'accès.
 - [x] **Gestion des Utilisateurs** : Rôles Admin, Gestionnaire, Vendeur, Lecteur.
-- [ ] **Logs d'Audit** : Traçabilité de chaque modification.
+- [x] **Logs d'Audit** : Traçabilité de chaque modification.
 - [x] **Setup Wizard** : Initialisation simplifiée du premier administrateur.
 - [/] **Configuration** : Gestion des Catégories, Unités et Infos Établissement.
 
@@ -30,7 +30,7 @@ Ce document sert de guide de référence pour l'évolution du logiciel de gestio
 - [x] **Notifications Contextuelles** :
     *   Push notifications pour les ruptures imminentes.
     *   Emails journaliers de résumé d'activité.
-- [ ] **Mode Hors-Ligne** : Support PWA (Progressive Web App) pour consulter le stock sans connexion.
+- [x] **Mode Hors-Ligne** : Support PWA (Progressive Web App) avec synchronisation Firebase.
 
 ## 🟠 Phase 4 : Finance & Approvisionnements
 - [ ] **Gestion des Achats** : Création et suivi des bons de commande fournisseur.
@@ -51,7 +51,7 @@ Ce document sert de guide de référence pour l'évolution du logiciel de gestio
 - [ ] **Multi-Dépôts & Transferts** : Gestion des mouvements entre différents entrepôts.
 
 ## 🔴 Phase 7 : Finalisation & Sécurité
-- [ ] **Audit Logs** : Journalisation de chaque action utilisateur pour une traçabilité totale.
+- [x] **Audit Logs** : Journalisation de chaque action utilisateur pour une traçabilité totale.
 - [ ] **Optimisation SEO & Web Vitals** : Performance maximale et indexation contrôlée.
 - [ ] **Sauvegardes Automatiques** : Export périodique des données Firestore vers un stockage externe.
 - [ ] **Documentation & Formation** : Tutoriels vidéo et manuel PDF complet.

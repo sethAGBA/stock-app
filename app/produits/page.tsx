@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { produitsService, categoriesService, fournisseursService, unitesService } from "@/lib/db";
 import type { Produit, Categorie, Fournisseur, Unite } from "@/types";
-import { Plus, Search, Edit2, Trash2, AlertTriangle, X, Camera, Tag, Download } from "lucide-react";
-import { exportToCSV } from "@/lib/export-utils";
+import { Plus, Search, Edit2, Trash2, AlertTriangle, X, Camera, Tag, Download, ChevronDown } from "lucide-react";
+import { exportToCSV, exportToExcel } from "@/lib/export";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { formatPrice, formatCurrency } from "@/lib/format";
 
 const Scanner = dynamic(() => import("@/components/common/Scanner"), { ssr: false });
 
@@ -25,6 +26,7 @@ export default function ProduitsPage() {
   const [editing, setEditing] = useState<Produit | null>(null);
   const [loading, setLoading] = useState(false);
   const [scannerTarget, setScannerTarget] = useState<"search" | "form">("search");
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const [form, setForm] = useState({
     reference: "", designation: "", description: "",
@@ -38,12 +40,13 @@ export default function ProduitsPage() {
   const isAdmin = appUser?.role === "admin";
 
   useEffect(() => {
+    if (!appUser) return;
     const unsub = produitsService.onSnapshot(setProduits);
     categoriesService.getAll().then(setCategories);
     fournisseursService.getAll().then(setFournisseurs);
     unitesService.getAll().then(setUnites);
     return unsub;
-  }, []);
+  }, [appUser]);
 
   const handleScan = (decodedText: string) => {
     if (scannerTarget === "form") {
@@ -108,12 +111,13 @@ export default function ProduitsPage() {
     setShowModal(true);
   };
 
-  const handleExport = () => {
+  const handleExport = (exportFormat: "csv" | "excel") => {
+    setIsExportMenuOpen(false);
     const dataToExport = produits.map(p => ({
       Reference: p.reference,
       Designation: p.designation,
-      Categorie: categories.find(c => c.id === p.categorieId)?.nom || "",
-      Fournisseur: fournisseurs.find(f => f.id === p.fournisseurId)?.nom || "",
+      Categorie: p.categorie || "",
+      Fournisseur: p.fournisseur || "",
       Unite: p.unite,
       'Prix Achat': p.prixAchat,
       'Prix Vente': p.prixVente,
@@ -121,7 +125,12 @@ export default function ProduitsPage() {
       'Stock Minimum': p.stockMinimum,
       'Date Peremption': p.datePeremption ? new Date(p.datePeremption).toLocaleDateString() : ""
     }));
-    exportToCSV(dataToExport, "stock_produits");
+
+    if (exportFormat === "csv") {
+      exportToCSV(dataToExport, "stock_produits");
+    } else {
+      exportToExcel(dataToExport, "stock_produits", "Stocks");
+    }
     toast.success("Exportation terminée");
   };
 
@@ -138,10 +147,10 @@ export default function ProduitsPage() {
         datePeremption: form.datePeremption ? new Date(form.datePeremption) : null
       };
       if (editing) {
-        await produitsService.update(editing.id, data as any);
+        await produitsService.update(editing.id, data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Produit modifié");
       } else {
-        await produitsService.create(data as any);
+        await produitsService.create(data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Produit créé");
       }
       setShowModal(false);
@@ -153,8 +162,9 @@ export default function ProduitsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer ce produit ?")) return;
-    await produitsService.delete(id);
+    const p = produits.find(item => item.id === id);
+    if (!p || !confirm(`Supprimer le produit "${p.designation}" ?`)) return;
+    await produitsService.delete(id, p.designation, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
     toast.success("Produit supprimé");
   };
 
@@ -172,14 +182,37 @@ export default function ProduitsPage() {
             </Link>
             {isGestionnaire && (
               <div className="flex gap-2">
-                <button
-                  onClick={handleExport}
-                  className="btn-secondary flex items-center gap-2 whitespace-nowrap"
-                  title="Exporter en CSV"
-                >
-                  <Download size={18} />
-                  <span className="hidden md:inline">Exporter</span>
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                    className="btn-secondary flex items-center gap-2 whitespace-nowrap"
+                    title="Exporter"
+                  >
+                    <Download size={18} />
+                    <span className="hidden md:inline">Exporter</span>
+                    <ChevronDown size={14} className={clsx("transition-transform", isExportMenuOpen && "rotate-180")} />
+                  </button>
+
+                  {isExportMenuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setIsExportMenuOpen(false)}></div>
+                      <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-cream-dark z-20 overflow-hidden transform origin-top-right transition-all">
+                        <button
+                          onClick={() => handleExport("excel")}
+                          className="w-full text-left px-4 py-3 hover:bg-cream/30 text-sm font-bold text-ink transition-colors flex items-center gap-2"
+                        >
+                          Format Excel (.xlsx)
+                        </button>
+                        <button
+                          onClick={() => handleExport("csv")}
+                          className="w-full text-left px-4 py-3 hover:bg-cream/30 text-sm font-bold text-ink transition-colors border-t border-cream-dark flex items-center gap-2"
+                        >
+                          Format CSV (.csv)
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
                 <button onClick={openCreate} className="btn-primary flex items-center gap-2 whitespace-nowrap">
                   <Plus size={18} />
                   <span className="hidden md:inline">Article</span>
@@ -248,8 +281,8 @@ export default function ProduitsPage() {
                       <span className="text-ink-muted text-xs ml-1">{p.unite}</span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="text-ink">{p.prixVente.toLocaleString("fr-FR")} F</div>
-                      {p.prixVenteGros && <div className="text-[10px] text-ink-muted">Gros: {p.prixVenteGros.toLocaleString("fr-FR")} F</div>}
+                      <div className="text-ink">{formatPrice(p.prixVente)} F</div>
+                      {p.prixVenteGros && <div className="text-[10px] text-ink-muted">Gros: {formatPrice(p.prixVenteGros)} F</div>}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex flex-col items-end gap-1">

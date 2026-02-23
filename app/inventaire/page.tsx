@@ -97,7 +97,7 @@ export default function InventairePage() {
                 statut: "en_cours",
                 lignes,
                 notes
-            });
+            }, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` });
             toast.success("Inventaire de session enregistré");
             // Refresh history
             inventaireService.getAll().then(setHistory);

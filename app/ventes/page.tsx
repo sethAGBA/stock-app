@@ -12,6 +12,7 @@ import Link from "next/link";
 import { ReceiptModal } from "@/components/common/ReceiptModal";
 import { etablissementService } from "@/lib/db";
 import type { Etablissement } from "@/types";
+import { formatPrice, formatCurrency } from "@/lib/format";
 
 const Scanner = dynamic(() => import("@/components/common/Scanner"), { ssr: false });
 
@@ -37,11 +38,12 @@ export default function POSPage() {
     const [lastVente, setLastVente] = useState<Vente | null>(null);
 
     useEffect(() => {
+        if (!appUser) return;
         const unsub = produitsService.onSnapshot(setProduits);
         clientsService.getAll().then(setClients);
         etablissementService.get().then(setEtablissement);
         return unsub;
-    }, []);
+    }, [appUser]);
 
 
     const handleScan = (decodedText: string) => {
@@ -275,13 +277,13 @@ export default function POSPage() {
                                 </div>
                                 <div className="mt-4 flex flex-col gap-1">
                                     <div className="flex items-end justify-between">
-                                        <p className="text-gold font-bold">{p.prixVente.toLocaleString("fr-FR")} F</p>
+                                        <p className="text-gold font-bold">{formatCurrency(p.prixVente)}</p>
                                         <p className={clsx("text-[10px] px-1.5 py-0.5 rounded", p.stockActuel <= 5 ? "bg-red-50 text-red-600" : "bg-cream text-ink-muted")}>
                                             Stock: {p.stockActuel}
                                         </p>
                                     </div>
                                     {p.prixVenteGros && (
-                                        <p className="text-[10px] text-ink-muted italic">Gros: {p.prixVenteGros.toLocaleString("fr-FR")} F</p>
+                                        <p className="text-[10px] text-ink-muted italic">Gros: {formatCurrency(p.prixVenteGros || 0)}</p>
                                     )}
                                 </div>
                             </button>
@@ -342,7 +344,7 @@ export default function POSPage() {
                                                 <Plus size={14} />
                                             </button>
                                         </div>
-                                        <p className="text-base font-bold text-ink whitespace-nowrap">{item.total.toLocaleString("fr-FR")} F</p>
+                                        <p className="text-base font-bold text-ink whitespace-nowrap">{formatCurrency(item.total)}</p>
                                     </div>
                                 </div>
                             ))}
@@ -412,7 +414,7 @@ export default function POSPage() {
                                                     <div className="flex items-center justify-between">
                                                         <span className="text-[10px] text-ink-muted">{c.telephone || "Pas de téléphone"}</span>
                                                         {c.soldeDette > 0 && (
-                                                            <span className="text-[9px] font-black text-red-500 uppercase">Dette: {c.soldeDette.toLocaleString()} F</span>
+                                                            <span className="text-[9px] font-black text-red-500 uppercase">Dette: {formatCurrency(c.soldeDette || 0)}</span>
                                                         )}
                                                     </div>
                                                 </div>
@@ -458,7 +460,7 @@ export default function POSPage() {
                             <div className="pt-2 border-t border-cream-dark space-y-2">
                                 <div className="flex justify-between text-sm">
                                     <span className="text-ink-muted">Sous-total</span>
-                                    <span className="font-medium text-ink">{totalHT.toLocaleString("fr-FR")} F</span>
+                                    <span className="font-medium text-ink">{formatCurrency(totalHT)}</span>
                                 </div>
                                 <div className="flex items-center justify-between bg-gold/5 rounded-lg p-2">
                                     <span className="text-xs font-medium text-gold/80">Rabais / Ristourne</span>
@@ -475,7 +477,7 @@ export default function POSPage() {
                                 </div>
                                 <div className="flex justify-between items-baseline pt-1">
                                     <span className="text-lg font-bold text-ink">Total à payer</span>
-                                    <span className="text-xl font-display font-bold text-gold">{totalTTC.toLocaleString("fr-FR")} F</span>
+                                    <span className="text-xl font-display font-bold text-gold">{formatCurrency(totalTTC)}</span>
                                 </div>
                             </div>
 
@@ -510,14 +512,14 @@ export default function POSPage() {
                                             <>
                                                 <span className="text-[10px] uppercase font-bold text-red-500">Reste à payer</span>
                                                 <span className="text-lg font-bold text-red-600 font-mono">
-                                                    {resteAPayer.toLocaleString("fr-FR")} F
+                                                    {formatCurrency(resteAPayer)}
                                                 </span>
                                             </>
                                         ) : (
                                             <>
                                                 <span className="text-[10px] uppercase font-bold text-green-600">Rendre</span>
                                                 <span className="text-lg font-bold text-green-600 font-mono">
-                                                    {monnaieARendre.toLocaleString("fr-FR")} F
+                                                    {formatCurrency(monnaieARendre)}
                                                 </span>
                                             </>
                                         )}

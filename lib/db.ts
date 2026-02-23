@@ -58,22 +58,47 @@ export const produitsService = {
     } as Produit;
   },
 
-  async create(data: Omit<Produit, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  async create(data: Omit<Produit, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.produits), {
       ...data,
       stockActuel: 0,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "PRODUIT_CREE",
+      details: `Création du produit : ${data.designation} (${data.reference})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
+
     return ref.id;
   },
 
-  async update(id: string, data: Partial<Produit>): Promise<void> {
+  async update(id: string, data: Partial<Produit>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.produits, id), { ...data, updatedAt: serverTimestamp() });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "PRODUIT_MODIFIE",
+      details: `Modification du produit ID: ${id}. Champs modifiés : ${Object.keys(data).join(", ")}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, designation: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.produits, id));
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "PRODUIT_SUPPRIME",
+      details: `Suppression du produit : ${designation} (ID: ${id})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
   async getEnAlerte(): Promise<Produit[]> {
@@ -238,17 +263,38 @@ export const categoriesService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Categorie));
   },
 
-  async create(data: Omit<Categorie, "id" | "createdAt">): Promise<string> {
+  async create(data: Omit<Categorie, "id" | "createdAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.categories), { ...data, createdAt: serverTimestamp() });
+    await auditService.enregistrer({
+      type: "stock",
+      action: "CATEGORIE_CREEE",
+      details: `Création de la catégorie : ${data.nom}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
     return ref.id;
   },
 
-  async update(id: string, data: Partial<Categorie>): Promise<void> {
+  async update(id: string, data: Partial<Categorie>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.categories, id), data);
+    await auditService.enregistrer({
+      type: "stock",
+      action: "CATEGORIE_MODIFIEE",
+      details: `Modification de la catégorie ID: ${id}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, nom: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.categories, id));
+    await auditService.enregistrer({
+      type: "stock",
+      action: "CATEGORIE_SUPPRIMEE",
+      details: `Suppression de la catégorie : ${nom} (ID: ${id})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 };
 
@@ -261,17 +307,38 @@ export const unitesService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Unite));
   },
 
-  async create(data: Omit<Unite, "id" | "createdAt">): Promise<string> {
+  async create(data: Omit<Unite, "id" | "createdAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.unites), { ...data, createdAt: serverTimestamp() });
+    await auditService.enregistrer({
+      type: "stock",
+      action: "UNITE_CREEE",
+      details: `Création de l'unité : ${data.nom} (${data.abreviation})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
     return ref.id;
   },
 
-  async update(id: string, data: Partial<Unite>): Promise<void> {
+  async update(id: string, data: Partial<Unite>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.unites, id), data);
+    await auditService.enregistrer({
+      type: "stock",
+      action: "UNITE_MODIFIEE",
+      details: `Modification de l'unité ID: ${id}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, nom: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.unites, id));
+    await auditService.enregistrer({
+      type: "stock",
+      action: "UNITE_SUPPRIMEE",
+      details: `Suppression de l'unité : ${nom} (ID: ${id})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 };
 
@@ -285,8 +352,15 @@ export const etablissementService = {
     return { id: snap.id, ...snap.data(), updatedAt: toDate(snap.data()!.updatedAt) } as Etablissement;
   },
 
-  async save(data: Omit<Etablissement, "id" | "updatedAt">): Promise<void> {
+  async save(data: Omit<Etablissement, "id" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<void> {
     await setDoc(doc(db, COLS.configurations, "default"), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    await auditService.enregistrer({
+      type: "configuration",
+      action: "CONFIG_MODIFIEE",
+      details: `Mise à jour des informations de l'établissement : ${data.nom}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 };
 
@@ -299,21 +373,42 @@ export const fournisseursService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as Fournisseur));
   },
 
-  async create(data: Omit<Fournisseur, "id" | "createdAt">): Promise<string> {
+  async create(data: Omit<Fournisseur, "id" | "createdAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.fournisseurs), {
       ...data,
       soldeDette: 0,
       createdAt: serverTimestamp()
     });
+    await auditService.enregistrer({
+      type: "stock",
+      action: "FOURNISSEUR_CREE",
+      details: `Nouveau fournisseur : ${data.nom}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
     return ref.id;
   },
 
-  async update(id: string, data: Partial<Fournisseur>): Promise<void> {
+  async update(id: string, data: Partial<Fournisseur>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.fournisseurs, id), data);
+    await auditService.enregistrer({
+      type: "stock",
+      action: "FOURNISSEUR_MODIFIE",
+      details: `Modification du fournisseur ID: ${id}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, nom: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.fournisseurs, id));
+    await auditService.enregistrer({
+      type: "stock",
+      action: "FOURNISSEUR_SUPPRIME",
+      details: `Suppression du fournisseur : ${nom} (ID: ${id})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
   async updateSoldeDette(id: string, montant: number): Promise<void> {
@@ -342,8 +437,16 @@ export const utilisateursService = {
     return snap.docs.map(d => ({ uid: d.id, ...d.data(), createdAt: toDate(d.data().createdAt) } as AppUser));
   },
 
-  async create(uid: string, data: Omit<AppUser, "uid" | "createdAt">): Promise<void> {
+  async create(uid: string, data: Omit<AppUser, "uid" | "createdAt">, admin: { uid: string; nom: string }): Promise<void> {
     await setDoc(doc(db, COLS.utilisateurs, uid), { ...data, createdAt: serverTimestamp() });
+
+    await auditService.enregistrer({
+      type: "admin",
+      action: "UTILISATEUR_CREE",
+      details: `Création de l'utilisateur ${data.prenom} ${data.nom} (${data.email}) avec le rôle ${data.role}`,
+      utilisateurId: admin.uid,
+      utilisateurNom: admin.nom,
+    });
   },
 
   async count(): Promise<number> {
@@ -351,8 +454,16 @@ export const utilisateursService = {
     return snap.size;
   },
 
-  async update(uid: string, data: Partial<AppUser>): Promise<void> {
+  async update(uid: string, data: Partial<AppUser>, admin: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.utilisateurs, uid), data);
+
+    await auditService.enregistrer({
+      type: "admin",
+      action: "UTILISATEUR_MODIFIE",
+      details: `Modification de l'utilisateur ${uid}. Rôle : ${data.role || "inchangé"}. Actif : ${data.actif !== undefined ? data.actif : "inchangé"}`,
+      utilisateurId: admin.uid,
+      utilisateurNom: admin.nom,
+    });
   },
 };
 
@@ -365,22 +476,47 @@ export const clientsService = {
     return snap.docs.map(d => ({ id: d.id, ...d.data(), createdAt: toDate(d.data().createdAt), derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined } as Client));
   },
 
-  async create(data: Omit<Client, "id" | "createdAt" | "totalAchats" | "soldeDette">): Promise<string> {
+  async create(data: Omit<Client, "id" | "createdAt" | "totalAchats" | "soldeDette">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.clients), {
       ...data,
       totalAchats: 0,
       soldeDette: 0,
       createdAt: serverTimestamp(),
     });
+
+    await auditService.enregistrer({
+      type: "client",
+      action: "CLIENT_CREE",
+      details: `Nouveau client : ${data.prenom} ${data.nom}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
+
     return ref.id;
   },
 
-  async update(id: string, data: Partial<Client>): Promise<void> {
+  async update(id: string, data: Partial<Client>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.clients, id), data);
+
+    await auditService.enregistrer({
+      type: "client",
+      action: "CLIENT_MODIFIE",
+      details: `Modification du client ID: ${id}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, nom: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.clients, id));
+
+    await auditService.enregistrer({
+      type: "client",
+      action: "CLIENT_SUPPRIME",
+      details: `Suppression du client : ${nom} (ID: ${id})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
   // Enregistrer un versement pour épurer une dette
@@ -460,6 +596,7 @@ export const ventesService = {
 
       tx.set(venteRef, {
         ...data,
+        statut: "valide",
         createdAt: serverTimestamp(),
       });
 
@@ -475,6 +612,83 @@ export const ventesService = {
       }).catch(err => console.error("Logging error:", err));
 
       return venteId;
+    });
+  },
+
+  async annuler(vente: Vente, motif: string, utilisateur: { uid: string; nom: string }): Promise<void> {
+    const venteRef = doc(db, COLS.ventes, vente.id);
+    await runTransaction(db, async (tx) => {
+      // 1. Lectures (Reads)
+      const vDoc = await tx.get(venteRef);
+      if (!vDoc.exists()) throw "Vente introuvable";
+      const vData = vDoc.data() as Vente;
+      if (vData.statut === "annulee") throw "Cette vente est déjà annulée";
+
+      const produitSnaps = await Promise.all(
+        vente.lignes.map(l => tx.get(doc(db, COLS.produits, l.produitId)))
+      );
+
+      let clientSnap = null;
+      if (vente.clientId) {
+        clientSnap = await tx.get(doc(db, COLS.clients, vente.clientId));
+      }
+
+      // 2. Écritures (Writes)
+      produitSnaps.forEach((produitSnap, i) => {
+        const ligne = vente.lignes[i];
+        if (!produitSnap.exists()) return; // On ignore si le produit n'existe plus
+
+        const produit = produitSnap.data() as Produit;
+        const produitRef = doc(db, COLS.produits, ligne.produitId);
+
+        const nouveauStock = (produit.stockActuel || 0) + ligne.quantite;
+        tx.update(produitRef, {
+          stockActuel: nouveauStock,
+          updatedAt: serverTimestamp()
+        });
+
+        // Mouvement de stock inverse
+        const mvtRef = doc(collection(db, COLS.mouvements));
+        tx.set(mvtRef, {
+          produitId: ligne.produitId,
+          produitRef: ligne.produitRef,
+          produitNom: ligne.produitNom,
+          type: "entree",
+          quantite: ligne.quantite,
+          stockAvant: produit.stockActuel,
+          stockApres: nouveauStock,
+          motif: `Annulation Vente #${vente.id.slice(0, 8)}`,
+          utilisateurId: utilisateur.uid,
+          utilisateurNom: utilisateur.nom,
+          createdAt: serverTimestamp(),
+        });
+      });
+
+      if (clientSnap && clientSnap.exists()) {
+        const clientData = clientSnap.data();
+        const clientRef = doc(db, COLS.clients, vente.clientId!);
+        tx.update(clientRef, {
+          totalAchats: Math.max(0, (clientData.totalAchats || 0) - vente.totalTTC),
+          soldeDette: Math.max(0, (clientData.soldeDette || 0) - (vente.resteAPayer || 0)),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      tx.update(venteRef, {
+        statut: "annulee",
+        motifAnnulation: motif,
+        annuleParId: utilisateur.uid,
+        annuleParNom: utilisateur.nom,
+        annuleAt: serverTimestamp(),
+      });
+    });
+
+    await auditService.enregistrer({
+      type: "vente",
+      action: "VENTE_ANNULEE",
+      details: `Annulation vente #${vente.id.slice(0, 8)} - Motif: ${motif}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
     });
   },
 
@@ -562,13 +776,23 @@ export const ventesService = {
 
 // --- Commandes Fournisseurs ---
 export const commandesFournisseursService = {
-  async create(data: Omit<CommandeFournisseur, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  async create(data: Omit<CommandeFournisseur, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const totalTTC = data.totalTTC;
     const montantPaye = data.montantPaye || 0;
     const resteAPayer = totalTTC - montantPaye;
     const statutPaiement = resteAPayer <= 0 ? "paye" : (montantPaye > 0 ? "partiel" : "en_attente");
 
-    return await runTransaction(db, async (tx) => {
+    const id = await runTransaction(db, async (tx) => {
+      let fSnap = null;
+      let fRef = null;
+
+      // 1. Lectures (Reads) d'abord
+      if (resteAPayer > 0) {
+        fRef = doc(db, COLS.fournisseurs, data.fournisseurId);
+        fSnap = await tx.get(fRef);
+      }
+
+      // 2. Écritures (Writes) ensuite
       const docRef = doc(collection(db, COLS.commandesFournisseurs));
       tx.set(docRef, {
         ...data,
@@ -580,28 +804,49 @@ export const commandesFournisseursService = {
       });
 
       // Si c'est à crédit (reste à payer > 0), on augmente la dette du fournisseur
-      if (resteAPayer > 0) {
-        const fRef = doc(db, COLS.fournisseurs, data.fournisseurId);
-        const fSnap = await tx.get(fRef);
-        if (fSnap.exists()) {
-          const solde = fSnap.data().soldeDette || 0;
-          tx.update(fRef, { soldeDette: solde + resteAPayer });
-        }
+      if (fSnap && fSnap.exists() && fRef) {
+        const solde = fSnap.data().soldeDette || 0;
+        tx.update(fRef, { soldeDette: solde + resteAPayer });
       }
 
       return docRef.id;
     });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "COMMANDE_FOURNISSEUR_CREEE",
+      details: `Nouvelle commande #${id.slice(0, 8)} - Fournisseur: ${data.fournisseurNom} - Total: ${totalTTC} F`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
+
+    return id;
   },
 
-  async update(id: string, data: Partial<CommandeFournisseur>): Promise<void> {
+  async update(id: string, data: Partial<CommandeFournisseur>, utilisateur: { uid: string; nom: string }): Promise<void> {
     await updateDoc(doc(db, COLS.commandesFournisseurs, id), {
       ...data,
       updatedAt: serverTimestamp(),
     });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "COMMANDE_FOURNISSEUR_MODIFIEE",
+      details: `Modification commande #${id.slice(0, 8)}. Statut: ${data.statut || "inchangé"}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
-  async delete(id: string): Promise<void> {
+  async delete(id: string, fournisseurNom: string, utilisateur: { uid: string; nom: string }): Promise<void> {
     await deleteDoc(doc(db, COLS.commandesFournisseurs, id));
+    await auditService.enregistrer({
+      type: "stock",
+      action: "COMMANDE_FOURNISSEUR_SUPPRIMEE",
+      details: `Suppression commande #${id.slice(0, 8)} (${fournisseurNom})`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
   },
 
   async getAll(): Promise<CommandeFournisseur[]> {
@@ -705,6 +950,14 @@ export const commandesFournisseursService = {
         updatedAt: serverTimestamp()
       });
     });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "COMMANDE_FOURNISSEUR_RECUE",
+      details: `Réception de la commande #${commande.id.slice(0, 8)} (${commande.fournisseurNom})`,
+      utilisateurId: userInfo.receivedBy,
+      utilisateurNom: userInfo.receivedByName,
+    });
   },
 
   // Enregistrer un paiement sur une commande
@@ -712,11 +965,17 @@ export const commandesFournisseursService = {
     if (montant <= 0) throw new Error("Le montant du paiement doit être supérieur à 0");
 
     await runTransaction(db, async (tx) => {
+      // 1. Lectures (Reads)
       const cmdRef = doc(db, COLS.commandesFournisseurs, commandeId);
       const cmdSnap = await tx.get(cmdRef);
       if (!cmdSnap.exists()) throw new Error("Commande introuvable");
 
       const cmd = cmdSnap.data() as CommandeFournisseur;
+
+      const fRef = doc(db, COLS.fournisseurs, cmd.fournisseurId);
+      const fSnap = await tx.get(fRef);
+
+      // 2. Écritures (Writes)
       const nouveauMontantPaye = (cmd.montantPaye || 0) + montant;
       const nouveauResteAPayer = cmd.totalTTC - nouveauMontantPaye;
 
@@ -734,8 +993,6 @@ export const commandesFournisseursService = {
       });
 
       // Mettre à jour le solde du fournisseur (diminution de la dette)
-      const fRef = doc(db, COLS.fournisseurs, cmd.fournisseurId);
-      const fSnap = await tx.get(fRef);
       if (fSnap.exists()) {
         const soldeActuel = fSnap.data().soldeDette || 0;
         tx.update(fRef, { soldeDette: Math.max(0, soldeActuel - montant) });
@@ -788,10 +1045,11 @@ export const cloturesService = {
     });
 
     // Log the closure
+    const cible = data.vendeurNom ? `caisse de ${data.vendeurNom}` : `caisse`;
     await auditService.enregistrer({
       type: "admin",
       action: "CLOTURE_CAISSE",
-      details: `Clôture du ${format(data.date, "dd/MM/yyyy")} par ${data.utilisateurNom}. Total: ${data.totalVentes} F`,
+      details: `Clôture ${cible} du ${format(data.date, "dd/MM/yyyy")} par ${data.utilisateurNom}. Total: ${data.totalVentes} F`,
       utilisateurId: data.utilisateurId,
       utilisateurNom: data.utilisateurNom
     });
@@ -799,8 +1057,12 @@ export const cloturesService = {
     return ref.id;
   },
 
-  async getAll(): Promise<ClotureCaisse[]> {
-    const snap = await getDocs(query(collection(db, COLS.clotures), orderBy("date", "desc")));
+  async getAll(vendeurId?: string): Promise<ClotureCaisse[]> {
+    let q = query(collection(db, COLS.clotures), orderBy("date", "desc"));
+    if (vendeurId) {
+      q = query(collection(db, COLS.clotures), where("vendeurId", "==", vendeurId), orderBy("date", "desc"));
+    }
+    const snap = await getDocs(q);
     return snap.docs.map(d => ({
       id: d.id,
       ...d.data(),
@@ -811,12 +1073,21 @@ export const cloturesService = {
 };
 
 export const inventaireService = {
-  async enregistrer(data: Omit<InventaireSession, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  async enregistrer(data: Omit<InventaireSession, "id" | "createdAt" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<string> {
     const ref = await addDoc(collection(db, COLS.inventaires), {
       ...data,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
+
+    await auditService.enregistrer({
+      type: "stock",
+      action: "INVENTAIRE_CREE",
+      details: `Démarrage d'un nouvel inventaire le ${format(toDate(data.date), "dd/MM/yyyy")}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
+
     return ref.id;
   },
 
@@ -839,13 +1110,18 @@ export const inventaireService = {
     const inv = snap.data() as InventaireSession;
 
     await runTransaction(db, async (tx) => {
-      // 1. Mettre à jour le stock réel de chaque produit
-      for (const ligne of inv.lignes) {
-        if (ligne.ecart === 0) continue;
+      // 1. Lectures (Reads)
+      const lignesAvecEcart = inv.lignes.filter(l => l.ecart !== 0);
+      const productSnaps = await Promise.all(
+        lignesAvecEcart.map(l => tx.get(doc(db, COLS.produits, l.produitId)))
+      );
+
+      // 2. Écritures (Writes) - Mettre à jour le stock réel de chaque produit
+      lignesAvecEcart.forEach((ligne, i) => {
+        const prodSnap = productSnaps[i];
+        if (!prodSnap.exists()) return;
 
         const prodRef = doc(db, COLS.produits, ligne.produitId);
-        const prodSnap = await tx.get(prodRef);
-        if (!prodSnap.exists()) continue;
 
         // Mise à jour du stock
         tx.update(prodRef, {
@@ -868,9 +1144,9 @@ export const inventaireService = {
           utilisateurNom,
           createdAt: serverTimestamp(),
         });
-      }
+      });
 
-      // 2. Marquer l'inventaire comme validé
+      // 3. Marquer l'inventaire comme validé
       tx.update(ref, {
         statut: "valide",
         updatedAt: serverTimestamp(),

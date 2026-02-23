@@ -15,11 +15,11 @@ const NAV = [
   { href: "/dashboard", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/produits", label: "Produits", icon: Package },
   { href: "/stock", label: "Mouvements", icon: ArrowLeftRight },
-  { href: "/inventaire", label: "Inventaire", icon: Save },
+  { href: "/inventaire", label: "Inventaire", icon: Save, gestionnaireOnly: true },
   { href: "/ventes", label: "Ventes (POS)", icon: ShoppingCart },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/fournisseurs", label: "Fournisseurs", icon: Truck },
-  { href: "/rapports", label: "Rapports", icon: FileBarChart },
+  { href: "/rapports", label: "Rapports", icon: FileBarChart, gestionnaireOnly: true },
   { href: "/rapports/cloture", label: "Caisse (Z)", icon: Save },
   { href: "/admin/logs", label: "Audit Logs", icon: FileBarChart, adminOnly: true },
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users, adminOnly: true },
@@ -38,11 +38,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     router.push("/login");
   };
 
-  const navItems = NAV.filter(n =>
-    !n.adminOnly ||
-    appUser?.role === "admin" ||
-    (n.href === "/configuration" && appUser?.role === "gestionnaire")
-  );
+  const navItems = NAV.filter(n => {
+    // Admin only
+    if (n.adminOnly) return appUser?.role === "admin";
+    // Gestionnaire or Admin
+    if (n.gestionnaireOnly) return appUser?.role === "admin" || appUser?.role === "gestionnaire";
+
+    // Strict restriction for sellers: only POS and Clients
+    if (appUser?.role === "vendeur") {
+      return n.href === "/ventes" || n.href === "/clients";
+    }
+
+    return true; // Visible par tous (Gestionnaire et Admin par défaut si pas admin/gestOnly)
+  });
 
   return (
     <div className="flex h-screen bg-cream overflow-hidden">

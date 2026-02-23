@@ -3,8 +3,10 @@ import { useEffect, useState, useRef } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { produitsService, etablissementService } from "@/lib/db";
 import type { Produit, Etablissement } from "@/types";
-import { Printer, ArrowLeft, Search, Plus, Minus, Trash2, Tag } from "lucide-react";
+import { Printer, ArrowLeft, Search, Plus, Minus, Trash2, Tag, ShoppingBag } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/lib/auth-context";
+import { formatPrice, formatCurrency } from "@/lib/format";
 import JsBarcode from "jsbarcode";
 import { useReactToPrint } from "react-to-print";
 import clsx from "clsx";
@@ -127,7 +129,7 @@ export default function LabelGenerationPage() {
                                         </div>
                                         <Plus size={14} className="text-ink-muted group-hover:text-gold" />
                                     </div>
-                                    <p className="text-xs font-black text-ink mt-1">{p.prixVente.toLocaleString()} F</p>
+                                    <p className="text-xs font-black text-ink mt-1">{formatCurrency(p.prixVente)}</p>
                                 </div>
                             ))}
                         </div>
@@ -225,7 +227,7 @@ function BarcodeLabel({ produit, etablissement }: { produit: Produit, etablissem
             <p className="text-[10px] font-black uppercase text-center truncate w-full mb-1">{etablissement?.nom || "Boutique"}</p>
             <p className="text-xs font-bold text-center line-clamp-1 w-full mb-1">{produit.designation}</p>
             <svg ref={svgRef} className="max-w-full"></svg>
-            <p className="text-sm font-black mt-1">{produit.prixVente.toLocaleString()} F</p>
+            <p className="text-sm font-black mt-1">{formatCurrency(produit.prixVente)}</p>
         </div>
     );
 }

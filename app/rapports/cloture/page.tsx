@@ -9,6 +9,7 @@ import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
 import { useAuth } from "@/lib/auth-context";
 import clsx from "clsx";
+import { formatPrice } from "@/lib/format";
 
 export default function CashClosurePage() {
     const { appUser } = useAuth();
@@ -38,7 +39,7 @@ export default function CashClosurePage() {
         setLoading(true);
         Promise.all([
             ventesService.getForDateRange(start, end, selectedSellerId || appUser.uid),
-            cloturesService.getAll(),
+            cloturesService.getAll(isGestionnaire ? undefined : appUser.uid),
             isGestionnaire ? utilisateursService.getAll() : Promise.resolve([])
         ]).then(([sales, closures, users]) => {
             setTodaySales(sales);
@@ -70,6 +71,10 @@ export default function CashClosurePage() {
         if (!appUser) return;
         setSaving(true);
         try {
+            const vendeurObject = isGestionnaire
+                ? vendeurs.find(v => v.uid === selectedSellerId)
+                : appUser;
+
             const closureData: Omit<ClotureCaisse, "id" | "createdAt"> = {
                 date: new Date(),
                 totalVentes,
@@ -80,13 +85,16 @@ export default function CashClosurePage() {
                 ecart,
                 note,
                 utilisateurId: appUser.uid,
-                utilisateurNom: `${appUser.prenom} ${appUser.nom}`
+                utilisateurNom: `${appUser.prenom} ${appUser.nom}`,
+                vendeurId: selectedSellerId || appUser.uid,
+                vendeurNom: vendeurObject ? `${vendeurObject.prenom} ${vendeurObject.nom}` : "Vendeur",
             };
 
             await cloturesService.enregistrer(closureData);
             toast.success("Rapport Z enregistré avec succès");
             setActiveTab("history");
-            cloturesService.getAll().then(setHistory);
+            const newHistory = await cloturesService.getAll(isGestionnaire ? undefined : appUser.uid);
+            setHistory(newHistory);
         } catch (err) {
             toast.error("Erreur lors de l'enregistrement");
         } finally {
@@ -158,7 +166,7 @@ export default function CashClosurePage() {
                                     <div className="flex flex-col md:flex-row gap-8 items-center justify-between p-6 bg-cream/20 rounded-2xl border-2 border-dashed border-cream-dark">
                                         <div className="text-center md:text-left">
                                             <p className="text-[10px] uppercase font-black text-ink-muted tracking-widest mb-1">Montant Théorique (Espèces)</p>
-                                            <p className="text-3xl font-black text-ink">{montantTheorique.toLocaleString()} F</p>
+                                            <p className="text-3xl font-black text-ink">{formatPrice(montantTheorique)} F</p>
                                         </div>
                                         <div className="text-gold hidden md:block"><ChevronRight /></div>
                                         <div className="w-full md:w-48">
@@ -196,7 +204,7 @@ export default function CashClosurePage() {
                                             </div>
                                         </div>
                                         <p className={clsx("text-2xl font-black", ecart === 0 ? "text-green-600" : ecart > 0 ? "text-blue-600" : "text-red-600")}>
-                                            {ecart > 0 ? "+" : ""}{ecart.toLocaleString()} F
+                                            {ecart > 0 ? "+" : ""}{formatPrice(ecart)} F
                                         </p>
                                     </div>
 
@@ -233,7 +241,7 @@ export default function CashClosurePage() {
                                     <div key={v.id} className="p-4 hover:bg-cream/10 transition-colors">
                                         <div className="flex justify-between items-start mb-1">
                                             <span className="text-[10px] font-mono text-ink-muted">#{v.id.slice(0, 8)}</span>
-                                            <span className="text-xs font-bold text-ink">{v.totalTTC.toLocaleString()} F</span>
+                                            <span className="text-xs font-bold text-ink">{formatPrice(v.totalTTC)} F</span>
                                         </div>
                                         <div className="flex justify-between items-center">
                                             <p className="text-xs text-ink truncate max-w-[120px]">{v.clientNom}</p>
@@ -264,7 +272,7 @@ export default function CashClosurePage() {
                                             "absolute top-0 right-0 px-3 py-1 text-[10px] font-black uppercase rounded-bl-xl",
                                             c.ecart > 0 ? "bg-blue-500 text-white" : "bg-red-500 text-white"
                                         )}>
-                                            Écart: {c.ecart.toLocaleString()} F
+                                            Écart: {formatPrice(c.ecart)} F
                                         </div>
                                     )}
                                     <div className="flex items-center gap-4 mb-6">
@@ -280,20 +288,26 @@ export default function CashClosurePage() {
                                     <div className="grid grid-cols-2 gap-4 mb-4">
                                         <div className="bg-cream/30 p-2 rounded-lg">
                                             <p className="text-[10px] text-ink-muted uppercase font-bold">Total Ventes</p>
-                                            <p className="text-sm font-black text-ink">{c.totalVentes.toLocaleString()} F</p>
+                                            <p className="text-sm font-black text-ink">{formatPrice(c.totalVentes)} F</p>
                                         </div>
                                         <div className="bg-cream/30 p-2 rounded-lg">
                                             <p className="text-[10px] text-ink-muted uppercase font-bold">Espèces Réel</p>
-                                            <p className="text-sm font-black text-gold">{c.montantReel.toLocaleString()} F</p>
+                                            <p className="text-sm font-black text-gold">{formatPrice(c.montantReel)} F</p>
                                         </div>
                                     </div>
 
                                     <div className="space-y-1 text-[10px] text-ink-muted border-t border-cream-dark pt-4">
                                         <div className="flex justify-between">
-                                            <span>Par :</span>
-                                            <span className="font-bold">{c.utilisateurNom}</span>
+                                            <span>Caisse de :</span>
+                                            <span className="font-bold">{c.vendeurNom || c.utilisateurNom}</span>
                                         </div>
-                                        {c.nbVentes && (
+                                        {c.vendeurId && c.vendeurId !== c.utilisateurId && (
+                                            <div className="flex justify-between">
+                                                <span>Clôturé par :</span>
+                                                <span className="font-bold">{c.utilisateurNom}</span>
+                                            </div>
+                                        )}
+                                        {c.nbVentes !== undefined && (
                                             <div className="flex justify-between">
                                                 <span>Nb Ventes :</span>
                                                 <span className="font-bold">{c.nbVentes}</span>
@@ -327,7 +341,7 @@ function ClosureKPI({ label, value, color }: { label: string; value: number; col
     return (
         <div className={clsx("card p-4 border flex flex-col items-center text-center", colors)}>
             <p className="text-[9px] uppercase font-black tracking-widest mb-1 opacity-70">{label}</p>
-            <p className="text-lg font-black">{value.toLocaleString()} <span className="text-[10px] font-normal">F</span></p>
+            <p className="text-lg font-black">{formatPrice(value)} <span className="text-[10px] font-normal">F</span></p>
         </div>
     );
 }

@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type { Vente, Etablissement } from "@/types";
 import { format } from "date-fns";
+import { formatPrice, formatCurrency } from "@/lib/format";
 
 interface ReceiptPrinterProps {
     vente: Vente | null;
@@ -56,7 +57,7 @@ export const ReceiptPrinter = forwardRef<HTMLDivElement, ReceiptPrinterProps>(
                             <tr key={i}>
                                 <td className="py-0.5 align-top w-[10%]">{l.quantite}</td>
                                 <td className="py-0.5 align-top">{l.produitNom}</td>
-                                <td className="py-0.5 align-top text-right whitespace-nowrap">{l.total.toLocaleString("fr-FR")}</td>
+                                <td className="py-0.5 align-top text-right whitespace-nowrap">{formatPrice(l.total)}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -66,17 +67,17 @@ export const ReceiptPrinter = forwardRef<HTMLDivElement, ReceiptPrinterProps>(
                 <div className="border-t border-black border-dashed pt-2 mb-4 space-y-1">
                     <div className="flex justify-between">
                         <span>Total HT</span>
-                        <span>{vente.totalHT.toLocaleString("fr-FR")} F</span>
+                        <span>{formatCurrency(vente.totalHT)}</span>
                     </div>
                     {(vente.remise || 0) > 0 && (
                         <div className="flex justify-between">
                             <span>Remise</span>
-                            <span>-{(vente.remise || 0).toLocaleString("fr-FR")} F</span>
+                            <span>-{formatCurrency(vente.remise || 0)}</span>
                         </div>
                     )}
                     <div className="flex justify-between text-sm font-bold border-t border-black border-dashed pt-1 mt-1">
                         <span>NET A PAYER</span>
-                        <span>{vente.totalTTC.toLocaleString("fr-FR")} Val</span>
+                        <span>{formatCurrency(vente.totalTTC)}</span>
                     </div>
                 </div>
 
@@ -88,24 +89,24 @@ export const ReceiptPrinter = forwardRef<HTMLDivElement, ReceiptPrinterProps>(
                     </div>
                     <div className="flex justify-between">
                         <span>Reçu:</span>
-                        <span>{(vente.montantRecu || 0).toLocaleString("fr-FR")} F</span>
+                        <span>{formatCurrency(vente.montantRecu || 0)}</span>
                     </div>
                     {vente.resteAPayer > 0 && (
                         <div className="flex justify-between font-bold text-red-600">
                             <span>Reste à payer:</span>
-                            <span>{vente.resteAPayer.toLocaleString("fr-FR")} F</span>
+                            <span>{formatCurrency(vente.resteAPayer)}</span>
                         </div>
                     )}
                     <div className="flex justify-between">
                         <span>Rendu:</span>
-                        <span>{(vente.monnaie || 0).toLocaleString("fr-FR")} F</span>
+                        <span>{formatCurrency(vente.monnaie || 0)}</span>
                     </div>
                 </div>
 
                 {/* Footer */}
                 <div className="text-center space-y-2">
                     <p className="italic">{etablissement?.piedDePage || "Merci de votre visite !"}</p>
-                    <p className="text-[8px] mt-4">Logiciel: Vision+ Consulting (TOGOCARE)</p>
+                    <p className="text-[8px] mt-4">Logiciel: Vision+ Consulting (TogoStock)</p>
                 </div>
             </div>
         );

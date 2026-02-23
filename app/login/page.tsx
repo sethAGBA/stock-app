@@ -43,7 +43,7 @@ export default function LoginPage() {
           <h1 className="text-white font-display text-4xl font-light leading-tight">
             Gestion de<br /><span className="italic text-gold">Stock</span>
           </h1>
-          <p className="text-white/30 text-xs mt-3">Développé par TOGOCARE</p>
+          <p className="text-white/30 text-xs mt-3">Développé par TogoStock</p>
         </div>
 
         {/* Form */}
@@ -85,7 +85,7 @@ export default function LoginPage() {
 
         {/* Bottom rule */}
         <div className="mt-10 pt-6 border-t border-white/10 text-center">
-          <p className="text-white/20 text-[10px] font-mono">TOGOCARE © 2025 · v1.0</p>
+          <p className="text-white/20 text-[10px] font-mono">TogoStock © 2025 · v1.0</p>
         </div>
       </div>
     </div>

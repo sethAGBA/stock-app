@@ -7,6 +7,7 @@ import { Plus, Edit2, Trash2, Truck, X, Search } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
 import clsx from "clsx";
+import { formatPrice, formatCurrency } from "@/lib/format";
 import { NewOrderModal } from "@/components/stock/NewOrderModal";
 import { PaymentModal } from "@/components/stock/PaymentModal";
 import { CancellationModal } from "@/components/stock/CancellationModal";
@@ -28,8 +29,9 @@ export default function FournisseursPage() {
   const isAdmin = appUser?.role === "admin";
 
   useEffect(() => {
+    if (!appUser) return;
     fournisseursService.getAll().then(setFournisseurs);
-  }, []);
+  }, [appUser]);
 
   const reload = () => fournisseursService.getAll().then(setFournisseurs);
 
@@ -59,10 +61,10 @@ export default function FournisseursPage() {
     setLoading(true);
     try {
       if (editing) {
-        await fournisseursService.update(editing.id, form);
+        await fournisseursService.update(editing.id, form, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Fournisseur modifié");
       } else {
-        await fournisseursService.create(form as any);
+        await fournisseursService.create(form as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Fournisseur créé");
       }
       await reload();
@@ -75,8 +77,9 @@ export default function FournisseursPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer ce fournisseur ?")) return;
-    await fournisseursService.delete(id);
+    const f = fournisseurs.find(item => item.id === id);
+    if (!f || !confirm(`Supprimer le fournisseur "${f.nom}" ?`)) return;
+    await fournisseursService.delete(id, f.nom, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
     toast.success("Fournisseur supprimé");
     await reload();
     if (selectedFournisseur?.id === id) setSelectedFournisseur(null);
@@ -114,7 +117,7 @@ export default function FournisseursPage() {
         updateData.orderedByName = userFull;
       }
 
-      await commandesFournisseursService.update(id, updateData);
+      await commandesFournisseursService.update(id, updateData, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
       toast.success("Statut mis à jour");
     } catch (e) {
       toast.error("Erreur mise à jour");
@@ -130,7 +133,7 @@ export default function FournisseursPage() {
         cancelledBy: appUser?.uid,
         cancelledByName: userFull,
         motifAnnulation: motif
-      });
+      }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
       toast.success("Commande annulée");
     } catch (e) {
       toast.error("Erreur lors de l'annulation");
@@ -256,11 +259,11 @@ export default function FournisseursPage() {
                   </div>
                   <div className="bg-red-50 p-3 rounded-xl border border-red-100">
                     <p className="text-[10px] uppercase font-bold text-red-600 tracking-widest mb-1">Dette Totale</p>
-                    <p className="text-xl font-bold text-red-700">{(totalDette).toLocaleString()} <span className="text-xs">F</span></p>
+                    <p className="text-xl font-bold text-red-700">{formatPrice(totalDette)} <span className="text-xs">F</span></p>
                   </div>
                   <div className="bg-green-50 p-3 rounded-xl border border-green-100">
                     <p className="text-[10px] uppercase font-bold text-green-600 tracking-widest mb-1">Payé (Historique)</p>
-                    <p className="text-xl font-bold text-green-700">{(commandes.reduce((acc, c) => acc + (c.montantPaye || 0), 0)).toLocaleString()} F</p>
+                    <p className="text-xl font-bold text-green-700">{formatCurrency(commandes.reduce((acc, c) => acc + (c.montantPaye || 0), 0))}</p>
                   </div>
                 </div>
 
@@ -309,9 +312,11 @@ export default function FournisseursPage() {
 
                 {activeTab === "commandes" && (
                   <div className="space-y-4">
-                    <button onClick={() => setShowOrderModal(true)} className="btn-primary w-full flex items-center justify-center gap-3 py-4 shadow-lg active:scale-95 transition-all">
-                      <Plus size={20} /> Émettre une nouvelle commande
-                    </button>
+                    {isGestionnaire && (
+                      <button onClick={() => setShowOrderModal(true)} className="btn-primary w-full flex items-center justify-center gap-3 py-4 shadow-lg active:scale-95 transition-all">
+                        <Plus size={20} /> Émettre une nouvelle commande
+                      </button>
+                    )}
 
                     <div className="space-y-4">
                       {commandes.map(cmd => (
@@ -362,67 +367,69 @@ export default function FournisseursPage() {
                               )}
 
                               <p className="text-xs text-ink-muted underline mt-2">
-                                {cmd.lignes.length} article(s) • {cmd.totalTTC.toLocaleString()} F
+                                {cmd.lignes.length} article(s) • {formatCurrency(cmd.totalTTC)}
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-xl font-black text-ink">{cmd.totalTTC.toLocaleString()} <span className="text-xs font-normal">F</span></p>
-                              {cmd.montantPaye > 0 && <p className="text-[10px] text-green-600 font-bold tracking-tight">SOLDE PAYÉ : {cmd.montantPaye.toLocaleString()} F</p>}
+                              <p className="text-xl font-black text-ink">{formatPrice(cmd.totalTTC)} <span className="text-xs font-normal">F</span></p>
+                              {cmd.montantPaye > 0 && <p className="text-[10px] text-green-600 font-bold tracking-tight">SOLDE PAYÉ : {formatCurrency(cmd.montantPaye)}</p>}
                               {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && cmd.statut !== "annulee" && (
-                                <p className="text-[10px] text-red-500 font-bold tracking-tight">RESTE À PAYER : {(cmd.totalTTC - (cmd.montantPaye || 0)).toLocaleString()} F</p>
+                                <p className="text-[10px] text-red-500 font-bold tracking-tight">RESTE À PAYER : {formatCurrency(cmd.totalTTC - (cmd.montantPaye || 0))}</p>
                               )}
                             </div>
                           </div>
 
-                          <div className="flex gap-3 mt-5 pt-4 border-t border-cream-dark">
-                            {cmd.statut === "brouillon" && (
-                              <>
-                                <button
-                                  onClick={() => handleUpdateStatus(cmd.id, "commandee")}
-                                  className="flex-1 btn-primary py-2 text-xs"
-                                >
-                                  Passer commande
-                                </button>
-                                <button
-                                  onClick={() => handleUpdateStatus(cmd.id, "annulee")}
-                                  className="flex-1 btn-secondary py-2 text-xs text-red-500 border-red-100 hover:bg-red-50"
-                                >
-                                  Annuler
-                                </button>
-                              </>
-                            )}
-                            {(cmd.statut === "commandee" || cmd.statut === "recu") && (
-                              <>
-                                {cmd.statut === "commandee" && (
+                          {isGestionnaire && (
+                            <div className="flex gap-3 mt-5 pt-4 border-t border-cream-dark">
+                              {cmd.statut === "brouillon" && (
+                                <>
                                   <button
-                                    onClick={() => handleReception(cmd)}
-                                    className="flex-1 btn-primary py-2 text-xs bg-green-600 hover:bg-green-700 border-green-700"
+                                    onClick={() => handleUpdateStatus(cmd.id, "commandee")}
+                                    className="flex-1 btn-primary py-2 text-xs"
                                   >
-                                    Réceptionner
+                                    Passer commande
                                   </button>
-                                )}
-                                {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && (
                                   <button
-                                    onClick={() => handlePaiement(cmd)}
-                                    className="flex-1 btn-secondary py-2 text-xs font-bold text-ink hover:bg-cream"
+                                    onClick={() => handleUpdateStatus(cmd.id, "annulee")}
+                                    className="flex-1 btn-secondary py-2 text-xs text-red-500 border-red-100 hover:bg-red-50"
                                   >
-                                    Enregistrer Paiement
+                                    Annuler
                                   </button>
-                                )}
-                                <button
-                                  onClick={() => handleUpdateStatus(cmd.id, "annulee")}
-                                  className="flex-1 btn-secondary py-2 text-xs"
-                                >
-                                  Annuler
-                                </button>
-                              </>
-                            )}
-                            {cmd.statut === "recu" && cmd.totalTTC - (cmd.montantPaye || 0) <= 0 && (
-                              <div className="w-full text-center text-[10px] text-green-600 font-bold bg-green-50 py-1 rounded">
-                                STOCK MIS À JOUR LE {format(cmd.updatedAt, "dd/MM/yyyy")}
-                              </div>
-                            )}
-                          </div>
+                                </>
+                              )}
+                              {(cmd.statut === "commandee" || cmd.statut === "recu") && (
+                                <>
+                                  {cmd.statut === "commandee" && (
+                                    <button
+                                      onClick={() => handleReception(cmd)}
+                                      className="flex-1 btn-primary py-2 text-xs bg-green-600 hover:bg-green-700 border-green-700"
+                                    >
+                                      Réceptionner
+                                    </button>
+                                  )}
+                                  {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && (
+                                    <button
+                                      onClick={() => handlePaiement(cmd)}
+                                      className="flex-1 btn-secondary py-2 text-xs font-bold text-ink hover:bg-cream"
+                                    >
+                                      Enregistrer Paiement
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => handleUpdateStatus(cmd.id, "annulee")}
+                                    className="flex-1 btn-secondary py-2 text-xs"
+                                  >
+                                    Annuler
+                                  </button>
+                                </>
+                              )}
+                              {cmd.statut === "recu" && cmd.totalTTC - (cmd.montantPaye || 0) <= 0 && (
+                                <div className="w-full text-center text-[10px] text-green-600 font-bold bg-green-50 py-1 rounded">
+                                  STOCK MIS À JOUR LE {format(cmd.updatedAt, "dd/MM/yyyy")}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ))}
                       {commandes.length === 0 && (

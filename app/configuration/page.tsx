@@ -78,18 +78,18 @@ export default function ConfigurationPage() {
         try {
             if (activeTab === "categories") {
                 if (editingId) {
-                    await categoriesService.update(editingId, { nom, description });
+                    await categoriesService.update(editingId, { nom, description }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                     toast.success("Catégorie modifiée");
                 } else {
-                    await categoriesService.create({ nom, description });
+                    await categoriesService.create({ nom, description }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                     toast.success("Catégorie créée");
                 }
             } else {
                 if (editingId) {
-                    await unitesService.update(editingId, { nom, abreviation });
+                    await unitesService.update(editingId, { nom, abreviation }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                     toast.success("Unité modifiée");
                 } else {
-                    await unitesService.create({ nom, abreviation });
+                    await unitesService.create({ nom, abreviation }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                     toast.success("Unité créée");
                 }
             }
@@ -106,10 +106,12 @@ export default function ConfigurationPage() {
         if (!confirm("Êtes-vous sûr de vouloir supprimer cet élément ?")) return;
         try {
             if (activeTab === "categories") {
-                await categoriesService.delete(id);
+                const c = categories.find(item => item.id === id);
+                await categoriesService.delete(id, c?.nom || id, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                 toast.success("Catégorie supprimée");
             } else {
-                await unitesService.delete(id);
+                const u = unites.find(item => item.id === id);
+                await unitesService.delete(id, u?.nom || id, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                 toast.success("Unité supprimée");
             }
             loadData();
@@ -181,7 +183,7 @@ export default function ConfigurationPage() {
                         <ConfigurationEtablissement etablissement={etablissement} onSave={async (data) => {
                             setLoading(true);
                             try {
-                                await etablissementService.save(data);
+                                await etablissementService.save(data, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                                 setEtablissement({ ...etablissement, ...data });
                                 toast.success("Informations enregistrées");
                             } catch (e) {

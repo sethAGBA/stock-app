@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { clientsService } from "@/lib/db";
 import type { Client } from "@/types";
-import { Plus, Search, Edit2, Trash2, User, Phone, Mail, MapPin, X, Wallet, AlertCircle } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, X, Phone, Mail, MapPin, DollarSign, Clock, ArrowRight, Wallet, User, AlertCircle } from "lucide-react";
 import toast from "react-hot-toast";
+import clsx from "clsx";
+import { formatPrice, formatCurrency } from "@/lib/format";
 import { useAuth } from "@/lib/auth-context";
 
 export default function ClientsPage() {
@@ -25,8 +27,9 @@ export default function ClientsPage() {
     const isAdmin = appUser?.role === "admin";
 
     useEffect(() => {
+        if (!appUser) return;
         clientsService.getAll().then(setClients);
-    }, []);
+    }, [appUser]);
 
     const reload = () => clientsService.getAll().then(setClients);
 
@@ -59,10 +62,10 @@ export default function ClientsPage() {
         setLoading(true);
         try {
             if (editing) {
-                await clientsService.update(editing.id, form);
+                await clientsService.update(editing.id, form, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                 toast.success("Client modifié");
             } else {
-                await clientsService.create(form as any);
+                await clientsService.create(form as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
                 toast.success("Client créé");
             }
             await reload();
@@ -75,8 +78,9 @@ export default function ClientsPage() {
     };
 
     const handleDelete = async (id: string) => {
-        if (!confirm("Supprimer ce client ?")) return;
-        await clientsService.delete(id);
+        const c = clients.find(item => item.id === id);
+        if (!c || !confirm(`Supprimer le client "${c.prenom} ${c.nom}" ?`)) return;
+        await clientsService.delete(id, `${c.prenom} ${c.nom}`, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Client supprimé");
         await reload();
     };
@@ -144,11 +148,11 @@ export default function ClientsPage() {
 
                             <h3 className="font-semibold text-ink text-lg">{c.prenom} {c.nom}</h3>
                             <div className="flex items-center justify-between mb-4">
-                                <p className="text-xs text-ink-muted">Achats : {c.totalAchats.toLocaleString("fr-FR")} F</p>
+                                <p className="text-xs text-ink-muted">Achats : {formatCurrency(c.totalAchats)}</p>
                                 {c.soldeDette > 0 && (
                                     <div className="flex items-center gap-1 bg-red-50 text-red-600 px-2 py-1 rounded-lg border border-red-100 animate-pulse">
                                         <AlertCircle size={10} />
-                                        <span className="text-[10px] font-black uppercase">Dette : {c.soldeDette.toLocaleString("fr-FR")} F</span>
+                                        <span className="text-[10px] font-black uppercase">Dette : {formatCurrency(c.soldeDette)}</span>
                                     </div>
                                 )}
                             </div>
@@ -253,7 +257,7 @@ export default function ClientsPage() {
                         <form onSubmit={handleDebtPayment} className="p-8 space-y-6">
                             <div className="bg-cream/30 p-4 rounded-2xl text-center">
                                 <span className="text-[10px] uppercase font-black text-ink-muted tracking-widest block mb-1">Dette actuelle</span>
-                                <span className="text-2xl font-black text-ink">{selectedClientForPayment.soldeDette.toLocaleString("fr-FR")} F</span>
+                                <span className="text-2xl font-black text-ink">{formatCurrency(selectedClientForPayment.soldeDette)}</span>
                             </div>
 
                             <div className="space-y-2">
@@ -272,7 +276,7 @@ export default function ClientsPage() {
                                     <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gold font-bold">F</span>
                                 </div>
                                 <p className="text-[10px] text-ink-muted italic pl-1">
-                                    Le solde restant sera de {(selectedClientForPayment.soldeDette - paymentAmount).toLocaleString("fr-FR")} F
+                                    Le solde restant sera de {formatCurrency(selectedClientForPayment.soldeDette - paymentAmount)}
                                 </p>
                             </div>
 

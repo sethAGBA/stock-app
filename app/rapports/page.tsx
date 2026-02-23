@@ -6,12 +6,15 @@ import type { Produit, Mouvement, Client } from "@/types";
 import { FileText, Download, Table } from "lucide-react";
 import { format } from "date-fns";
 import toast from "react-hot-toast";
+import { formatPrice, formatCurrency } from "@/lib/format";
 
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell
 } from "recharts";
+import { useAuth } from "@/lib/auth-context";
 
 export default function RapportsPage() {
+  const { appUser } = useAuth();
   const [dateDebut, setDateDebut] = useState(format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd"));
   const [dateFin, setDateFin] = useState(format(new Date(), "yyyy-MM-dd"));
   const [loading, setLoading] = useState<string | null>(null);
@@ -41,7 +44,7 @@ export default function RapportsPage() {
       doc.text(`Généré le : ${format(new Date(), "dd/MM/yyyy à HH:mm")}`, 14, 36);
 
       const nomEtablissement = etablissement?.nom || "Vision+ Consulting";
-      doc.text(`${nomEtablissement} — TOGOCARE`, 14, 42);
+      doc.text(`${nomEtablissement} — TogoStock`, 14, 42);
 
       autoTable(doc, {
         startY: 50,
@@ -110,6 +113,7 @@ export default function RapportsPage() {
 
   useEffect(() => {
     const fetchStats = async () => {
+      if (!appUser) return;
       const debut = new Date(dateDebut);
       const fin = new Date(dateFin); fin.setHours(23, 59, 59);
       const data = await ventesService.getStats(debut, fin);
@@ -119,7 +123,7 @@ export default function RapportsPage() {
       setTotalCreances(clients.reduce((acc, c) => acc + (c.soldeDette || 0), 0));
     };
     fetchStats();
-  }, [dateDebut, dateFin]);
+  }, [dateDebut, dateFin, appUser]);
 
   return (
     <AppLayout>
@@ -163,13 +167,13 @@ export default function RapportsPage() {
             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
             <p className="text-[10px] uppercase text-gold font-black tracking-widest mb-2">Chiffre d'Affaires</p>
             <p className="text-3xl font-display font-black">
-              {stats ? stats.caTotal.toLocaleString("fr-FR") : "-"} <span className="text-xs font-normal text-cream/50">F</span>
+              {stats ? formatPrice(stats.caTotal) : "-"} <span className="text-xs font-normal text-cream/50">F</span>
             </p>
           </div>
           <div className="card bg-white border-cream-dark shadow-sm">
             <p className="text-[10px] uppercase text-ink-muted font-black tracking-widest mb-2">Créances Clients</p>
             <p className="text-3xl font-display font-black text-red-600">
-              {totalCreances.toLocaleString("fr-FR")} <span className="text-xs font-normal text-ink-muted">F</span>
+              {formatPrice(totalCreances)} <span className="text-xs font-normal text-ink-muted">F</span>
             </p>
           </div>
           <div className="card bg-white border-cream-dark shadow-sm">
@@ -181,7 +185,7 @@ export default function RapportsPage() {
           <div className="card bg-white border-cream-dark shadow-sm">
             <p className="text-[10px] uppercase text-ink-muted font-black tracking-widest mb-2">Panier Moyen</p>
             <p className="text-3xl font-display font-black text-gold">
-              {stats && stats.totalVentes > 0 ? (stats.caTotal / stats.totalVentes).toLocaleString("fr-FR", { maximumFractionDigits: 0 }) : "-"} <span className="text-xs font-normal text-ink-muted">F</span>
+              {stats && stats.totalVentes > 0 ? formatPrice(stats.caTotal / stats.totalVentes) : "-"} <span className="text-xs font-normal text-ink-muted">F</span>
             </p>
           </div>
         </div>
@@ -271,7 +275,7 @@ export default function RapportsPage() {
                       <td className="p-4 text-center">
                         <span className="bg-cream px-2 py-0.5 rounded-full font-bold text-[10px]">{p.qte}</span>
                       </td>
-                      <td className="p-4 text-right font-black text-ink">{p.total.toLocaleString()} F</td>
+                      <td className="p-4 text-right font-black text-ink">{formatCurrency(p.total)}</td>
                     </tr>
                   ))}
                 </tbody>

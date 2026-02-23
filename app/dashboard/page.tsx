@@ -8,8 +8,11 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "rec
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import clsx from "clsx";
+import { formatPrice } from "@/lib/format";
+import { useAuth } from "@/lib/auth-context";
 
 export default function DashboardPage() {
+  const { appUser } = useAuth();
   const [produits, setProduits] = useState<Produit[]>([]);
   const [mouvements, setMouvements] = useState<Mouvement[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
@@ -19,6 +22,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!appUser) return;
     const unsubP = produitsService.onSnapshot(p => { setProduits(p); setLoading(false); });
     const unsubM = mouvementsService.onSnapshot(m => setMouvements(m));
     clientsService.getAll().then(setClients);
@@ -26,7 +30,7 @@ export default function DashboardPage() {
     fournisseursService.getAll().then(setFournisseurs);
     commandesFournisseursService.getAll().then(setCommandes);
     return () => { unsubP(); unsubM(); };
-  }, []);
+  }, [appUser]);
 
   // Alertes et Valuations
   const alertes = produits.filter(p => p.stockActuel <= p.stockMinimum);
@@ -78,7 +82,7 @@ export default function DashboardPage() {
     };
   });
 
-  const fmt = (n: number) => n.toLocaleString("fr-FR");
+  const fmt = (n: number) => formatPrice(n);
 
   if (loading) return <AppLayout><div className="flex items-center justify-center h-64"><div className="w-6 h-6 border-2 border-gold border-t-transparent rounded-full animate-spin" /></div></AppLayout>;
 

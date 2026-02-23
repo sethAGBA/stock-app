@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { utilisateursService } from "@/lib/db";
 import type { AppUser, UserRole } from "@/types";
+import { useAuth } from "@/lib/auth-context";
 import { UserPlus, Mail, Shield, CheckCircle2, XCircle, Search, Edit2, Key, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { initializeApp, getApps, deleteApp } from "firebase/app";
@@ -29,6 +30,7 @@ export default function UtilisateursPage() {
   const [form, setForm] = useState({
     nom: "", prenom: "", email: "", password: "", role: "vendeur" as UserRole
   });
+  const { appUser } = useAuth();
 
   useEffect(() => {
     fetchUsers();
@@ -66,7 +68,7 @@ export default function UtilisateursPage() {
         email: form.email,
         role: form.role,
         actif: true,
-      });
+      }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
 
       toast.success("Utilisateur créé avec succès");
       setShowModal(false);
@@ -82,7 +84,7 @@ export default function UtilisateursPage() {
 
   const toggleStatus = async (user: AppUser) => {
     try {
-      await utilisateursService.update(user.uid, { actif: !user.actif });
+      await utilisateursService.update(user.uid, { actif: !user.actif }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
       toast.success(`Utilisateur ${user.actif ? "désactivé" : "activé"}`);
       fetchUsers();
     } catch (err) {

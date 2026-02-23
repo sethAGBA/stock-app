@@ -5,6 +5,7 @@ import { produitsService, commandesFournisseursService } from "@/lib/db";
 import type { Produit, CommandeFournisseur } from "@/types";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
+import { formatPrice } from "@/lib/format";
 
 interface Props {
     fournisseurId: string;
@@ -81,7 +82,7 @@ export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSucces
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 dateEcheance: dateEcheance ? new Date(dateEcheance) : null
-            } as any);
+            } as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
             toast.success("Commande créée (brouillon)");
             onSuccess();
             onClose();
@@ -183,7 +184,7 @@ export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSucces
                                                     />
                                                 </td>
                                                 <td className="p-3 text-right font-mono font-medium">
-                                                    {ligne.total.toLocaleString()} F
+                                                    {formatPrice(ligne.total)} F
                                                 </td>
                                                 <td className="p-3 text-right">
                                                     <button onClick={() => removeLigne(i)} className="text-red-400 hover:text-red-600 p-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -211,7 +212,7 @@ export function NewOrderModal({ fournisseurId, fournisseurNom, onClose, onSucces
                                 </div>
                                 <div className="text-right">
                                     <p className="text-sm text-ink-muted mb-1">Total Commande</p>
-                                    <p className="text-3xl font-display font-bold text-gold">{totalHT.toLocaleString()} <span className="text-base text-ink">FCFA</span></p>
+                                    <p className="text-3xl font-display font-bold text-gold">{formatPrice(totalHT)} <span className="text-base text-ink">FCFA</span></p>
                                 </div>
                             </div>
 

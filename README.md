@@ -1,5 +1,5 @@
 # Logiciel de Gestion de Stock — Vision+ Consulting
-> Développé par TOGOCARE · Next.js 14 + Firebase + Vercel
+> Développé par TogoStock · Next.js 14 + Firebase + Vercel
 
 ---
 

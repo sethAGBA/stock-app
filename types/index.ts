@@ -167,6 +167,11 @@ export interface Vente {
   monnaie?: number; // Monnaie rendue
   resteAPayer: number; // Nouveau: Différence si vente à crédit
   modePaiement: "especes" | "mobile_money" | "carte" | "autre" | "credit";
+  statut?: "valide" | "annulee";
+  motifAnnulation?: string;
+  annuleParId?: string;
+  annuleParNom?: string;
+  annuleAt?: Date;
   utilisateurId: string;
   utilisateurNom: string;
   createdAt: Date;
@@ -197,7 +202,7 @@ export interface FiltreRapport {
 // ── Audit Logs ───────────────────────────────────────────
 export interface AuditLog {
   id: string;
-  type: "vente" | "stock" | "auth" | "client" | "admin" | "configuration";
+  type: "vente" | "stock" | "auth" | "client" | "fournisseur" | "paiement" | "admin" | "configuration";
   action: string;
   details: string;
   utilisateurId: string;
@@ -222,8 +227,10 @@ export interface ClotureCaisse {
   montantReel: number;     // Somme réellement en caisse
   ecart: number;           // Différence
   note?: string;
-  utilisateurId: string;
+  utilisateurId: string;    // Personne qui effectue la clôture
   utilisateurNom: string;
+  vendeurId?: string;       // Personne dont c'est la caisse (pour V2)
+  vendeurNom?: string;
   createdAt: Date;
 }
 

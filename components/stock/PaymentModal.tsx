@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { X, DollarSign, Wallet } from "lucide-react";
+import { formatPrice } from "@/lib/format";
 
 interface Props {
     commandeId: string;
@@ -21,7 +22,7 @@ export function PaymentModal({ commandeId, totalTTC, montantPaye, onClose, onSuc
         if (!montant || isNaN(val) || val <= 0) return;
 
         if (val > reste) {
-            alert(`Le montant ne peut pas dépasser le reste à payer (${reste.toLocaleString()} F)`);
+            alert(`Le montant ne peut pas dépasser le reste à payer (${formatPrice(reste)} F)`);
             return;
         }
 
@@ -58,18 +59,18 @@ export function PaymentModal({ commandeId, totalTTC, montantPaye, onClose, onSuc
                     <div className="grid grid-cols-2 gap-4">
                         <div className="bg-cream/30 p-4 rounded-2xl border border-cream-dark">
                             <p className="text-[10px] uppercase font-black text-ink-muted mb-1">Total TTC</p>
-                            <p className="text-lg font-black text-ink">{totalTTC.toLocaleString()} F</p>
+                            <p className="text-lg font-black text-ink">{formatPrice(totalTTC)} F</p>
                         </div>
                         <div className="bg-green-50/50 p-4 rounded-2xl border border-green-100">
                             <p className="text-[10px] uppercase font-black text-green-700 mb-1">Déjà payé</p>
-                            <p className="text-lg font-black text-green-700">{montantPaye.toLocaleString()} F</p>
+                            <p className="text-lg font-black text-green-700">{formatPrice(montantPaye)} F</p>
                         </div>
                     </div>
 
                     <div className="bg-red-50/30 p-6 rounded-3xl border border-red-100 flex items-center justify-between">
                         <div>
                             <p className="text-[10px] uppercase font-black text-red-500 mb-1 tracking-tighter">Reste à payer</p>
-                            <p className="text-3xl font-black text-red-600 font-display">{reste.toLocaleString()} F</p>
+                            <p className="text-3xl font-black text-red-600 font-display">{formatPrice(reste)} F</p>
                         </div>
                         <div className="w-12 h-12 bg-red-600 rounded-2xl flex items-center justify-center shadow-lg shadow-red-200">
                             <DollarSign className="text-white" size={24} />

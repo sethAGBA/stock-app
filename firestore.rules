@@ -31,14 +31,18 @@ service cloud.firestore {
     // ── Produits ──
     match /produits/{id} {
       allow read: if isAuth();
-      allow create, update: if isGestionnaire();
+      // Création réservée aux gestionnaires et admins
+      allow create: if isGestionnaire();
+      // Modification du stock possible par vendeurs, gestionnaires et admins
+      allow update: if isGestionnaire() || isVendeur();
       allow delete: if isAdmin();
     }
 
     // ── Mouvements ──
     match /mouvements/{id} {
       allow read: if isAuth();
-      allow create: if isGestionnaire();
+      // Enregistrement de vente/réception par vendeurs ou gestionnaires
+      allow create: if isGestionnaire() || isVendeur();
       allow update, delete: if isAdmin();
     }
 
@@ -89,7 +93,8 @@ service cloud.firestore {
 
     // ── Commandes Fournisseurs ──
     match /commandes_fournisseurs/{id} {
-      allow read, create, update: if isGestionnaire();
+      allow read: if isAuth();
+      allow create, update: if isGestionnaire();
       allow delete: if isAdmin();
     }
 
@@ -102,15 +107,15 @@ service cloud.firestore {
 
     // ── Clôtures de Caisse ──
     match /clotures_caisse/{id} {
-      allow read: if isGestionnaire();
+      allow read: if isVendeur() && (isGestionnaire() || (resource != null && resource.data.utilisateurId == request.auth.uid));
       allow create: if isVendeur();
       allow update, delete: if isAdmin();
     }
 
     // ── Inventaires ──
     match /inventaires/{id} {
-      allow read: if isGestionnaire();
-      allow create, update: if isGestionnaire();
+      allow read: if isGestionnaire() || isVendeur();
+      allow create, update: if isGestionnaire() || isVendeur();
       allow delete: if isAdmin();
     }
   }

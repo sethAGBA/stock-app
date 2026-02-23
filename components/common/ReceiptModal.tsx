@@ -6,6 +6,7 @@ import { ReceiptPrinter } from "./ReceiptPrinter";
 import { X, Printer, FileDown } from "lucide-react";
 import { format } from "date-fns";
 import jsPDF from "jspdf";
+import { formatPrice, formatCurrency } from "@/lib/format";
 
 interface ReceiptModalProps {
     vente: Vente;
@@ -75,7 +76,7 @@ export function ReceiptModal({ vente, etablissement, onClose }: ReceiptModalProp
 
         doc.setFont("helvetica", "normal");
         for (const ligne of vente.lignes) {
-            const montantStr = `${ligne.total.toLocaleString("fr-FR")} F`;
+            const montantStr = formatCurrency(ligne.total);
             doc.text(`${ligne.quantite}`, margin, y);
             // Wrap long product names
             const maxWidth = 42;
@@ -89,25 +90,26 @@ export function ReceiptModal({ vente, etablissement, onClose }: ReceiptModalProp
         y += 2;
         doc.line(margin, y, 80 - margin, y);
         y += 4;
-        doc.text(`Total HT: ${vente.totalHT.toLocaleString("fr-FR")} F`, margin, y); y += 4;
+        y += 4;
+        doc.text(`Total HT: ${formatCurrency(vente.totalHT)}`, margin, y); y += 4;
         if ((vente.remise || 0) > 0) {
-            doc.text(`Remise: -${(vente.remise || 0).toLocaleString("fr-FR")} F`, margin, y); y += 4;
+            doc.text(`Remise: -${formatCurrency(vente.remise || 0)}`, margin, y); y += 4;
         }
         doc.setFont("helvetica", "bold");
-        doc.text(`NET A PAYER: ${vente.totalTTC.toLocaleString("fr-FR")} F`, margin, y); y += 6;
+        doc.text(`NET A PAYER: ${formatCurrency(vente.totalTTC)}`, margin, y); y += 6;
 
         // Payment
         doc.setFont("helvetica", "normal");
         doc.text(`Mode: ${vente.modePaiement.replace("_", " ").toUpperCase()}`, margin, y); y += 4;
-        doc.text(`Reçu: ${(vente.montantRecu || 0).toLocaleString("fr-FR")} F`, margin, y); y += 4;
+        doc.text(`Reçu: ${formatCurrency(vente.montantRecu || 0)}`, margin, y); y += 4;
         if ((vente.resteAPayer || 0) > 0) {
             doc.setFont("helvetica", "bold");
             doc.setTextColor(200, 0, 0); // Red
-            doc.text(`RESTE A PAYER: ${(vente.resteAPayer || 0).toLocaleString("fr-FR")} F`, margin, y); y += 5;
+            doc.text(`RESTE A PAYER: ${formatCurrency(vente.resteAPayer || 0)}`, margin, y); y += 5;
             doc.setTextColor(0, 0, 0); // Reset black
             doc.setFont("helvetica", "normal");
         }
-        doc.text(`Rendu: ${(vente.monnaie || 0).toLocaleString("fr-FR")} F`, margin, y); y += 6;
+        doc.text(`Rendu: ${formatCurrency(vente.monnaie || 0)}`, margin, y); y += 6;
 
         // Footer
         doc.setLineDashPattern([1, 1], 0);
@@ -115,7 +117,7 @@ export function ReceiptModal({ vente, etablissement, onClose }: ReceiptModalProp
         y += 4;
         doc.setFontSize(7);
         doc.text(piedPage, centerX, y, { align: "center" }); y += 4;
-        doc.text("Logiciel: Vision+ Consulting (TOGOCARE)", centerX, y, { align: "center" });
+        doc.text("Logiciel: Vision+ Consulting (TogoStock)", centerX, y, { align: "center" });
 
         doc.save(`ticket-${vente.id.slice(0, 8).toUpperCase()}.pdf`);
     };
