@@ -10,6 +10,7 @@ import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
 import clsx from "clsx";
+import ProductSearch from "@/components/common/ProductSearch";
 
 export default function StockPage() {
   const { appUser, currentMagasinId } = useAuth();
@@ -190,10 +191,12 @@ export default function StockPage() {
               </div>
               <div>
                 <label className="label">Produit *</label>
-                <select required value={form.produitId} onChange={e => setForm(f => ({ ...f, produitId: e.target.value }))} className="input">
-                  <option value="">Sélectionner un produit...</option>
-                  {produits.map(p => <option key={p.id} value={p.id}>{p.designation} — stock: {p.stockActuel} {p.unite}</option>)}
-                </select>
+                <ProductSearch
+                  produits={produits}
+                  selectedId={form.produitId}
+                  onSelect={(p: Produit) => setForm(f => ({ ...f, produitId: p.id }))}
+                  required
+                />
               </div>
               {produitSelected && (
                 <div className="bg-cream rounded-lg px-4 py-3 text-sm">
