@@ -1,13 +1,15 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { clientsService } from "@/lib/db";
-import type { Client } from "@/types";
+import { clientsService, utilisateursService } from "@/lib/db";
+import type { Client, AppUser } from "@/types";
 import {
     Plus, Search, Edit2, Trash2, X, Phone, Mail, MapPin,
     DollarSign, Clock, ArrowRight, Wallet, User, AlertCircle,
-    ArrowUpRight
+    ArrowUpRight, Filter, Ban
 } from "lucide-react";
+import AnnulationDetteModal from "@/components/modules/AnnulationDetteModal";
+import HistoriqueVersements from "@/components/modules/HistoriqueVersements";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 import { formatPrice, formatCurrency } from "@/lib/format";
@@ -24,33 +26,60 @@ export default function ClientsPage() {
     const [loading, setLoading] = useState(false);
     const [selectedClientForPayment, setSelectedClientForPayment] = useState<Client | null>(null);
     const [paymentAmount, setPaymentAmount] = useState<number>(0);
+    const [selectedClientForAnnulation, setSelectedClientForAnnulation] = useState<Client | null>(null);
 
     const [form, setForm] = useState({
         nom: "", prenom: "", email: "", telephone: "", adresse: ""
     });
+
+    // Filtres
+    const [dateDebut, setDateDebut] = useState<string>("");
+    const [dateFin, setDateFin] = useState<string>("");
+    const [filtreUtilisateur, setFiltreUtilisateur] = useState<string>("all");
+    const [users, setUsers] = useState<AppUser[]>([]);
 
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
     const isAdmin = appUser?.role === "admin";
 
     useEffect(() => {
         if (!appUser) return;
-        // Pour les non-admins, on attend d'avoir un magasinId avant de charger
-        // pour éviter l'erreur de permission sur la requête globale.
         if (appUser.role !== "admin" && !currentMagasinId) return;
 
-        clientsService.getAll(currentMagasinId).then(setClients);
-    }, [appUser, currentMagasinId]);
+        if (dateDebut && dateFin) {
+            const start = new Date(dateDebut);
+            const end = new Date(dateFin);
+            end.setHours(23, 59, 59);
+            clientsService.getForDateRange(start, end, undefined, currentMagasinId).then(setClients);
+        } else {
+            clientsService.getAll(currentMagasinId).then(setClients);
+        }
+
+        // Charger les utilisateurs pour le filtre
+        utilisateursService.getAll(currentMagasinId).then(setUsers);
+    }, [appUser, currentMagasinId, dateDebut, dateFin]);
 
     const reload = () => {
         if (appUser?.role !== "admin" && !currentMagasinId) return;
-        clientsService.getAll(currentMagasinId).then(setClients);
+
+        if (dateDebut && dateFin) {
+            const start = new Date(dateDebut);
+            const end = new Date(dateFin);
+            end.setHours(23, 59, 59);
+            clientsService.getForDateRange(start, end, undefined, currentMagasinId).then(setClients);
+        } else {
+            clientsService.getAll(currentMagasinId).then(setClients);
+        }
     };
 
-    const filtered = clients.filter(c =>
-        c.nom.toLowerCase().includes(search.toLowerCase()) ||
-        c.prenom?.toLowerCase().includes(search.toLowerCase()) ||
-        c.telephone?.includes(search)
-    );
+    const filtered = clients.filter(c => {
+        const matchesSearch = c.nom.toLowerCase().includes(search.toLowerCase()) ||
+            c.prenom?.toLowerCase().includes(search.toLowerCase()) ||
+            c.telephone?.includes(search);
+
+        const matchesUser = filtreUtilisateur === "all" || c.utilisateurId === filtreUtilisateur;
+
+        return matchesSearch && matchesUser;
+    });
 
     const openCreate = () => {
         setEditing(null);
@@ -100,13 +129,25 @@ export default function ClientsPage() {
 
     const handleDebtPayment = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedClientForPayment || paymentAmount <= 0) return;
+        if (!selectedClientForPayment || paymentAmount <= 0 || !appUser) return;
 
         setLoading(true);
         try {
-            await clientsService.payerDette(selectedClientForPayment.id, paymentAmount);
+            await clientsService.payerDette(
+                selectedClientForPayment.id,
+                paymentAmount,
+                { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` },
+                currentMagasinId,
+                `${selectedClientForPayment.prenom ?? ""} ${selectedClientForPayment.nom}`.trim()
+            );
             toast.success("Versement enregistré");
-            await reload();
+            setClients(prev =>
+                prev.map(c =>
+                    c.id === selectedClientForPayment.id
+                        ? { ...c, soldeDette: c.soldeDette - paymentAmount }
+                        : c
+                )
+            );
             setSelectedClientForPayment(null);
             setPaymentAmount(0);
         } catch (err: any) {
@@ -116,8 +157,21 @@ export default function ClientsPage() {
         }
     };
 
+    const handleSoldeUpdate = (clientId: string, nouveauSolde: number) => {
+        setClients(prev =>
+            prev.map(c => c.id === clientId ? { ...c, soldeDette: nouveauSolde } : c)
+        );
+    };
+
+    const handleAnnulationSuccess = (clientId: string, nouveauSolde: number) => {
+        setClients(prev =>
+            prev.map(c => c.id === clientId ? { ...c, soldeDette: nouveauSolde } : c)
+        );
+        setSelectedClientForAnnulation(null);
+    };
+
     const handleExportAll = () => {
-        const data = clients.map(c => ({
+        const data = filtered.map(c => ({
             "Prénom": c.prenom || "",
             "Nom": c.nom,
             "Téléphone": c.telephone || "",
@@ -131,7 +185,7 @@ export default function ClientsPage() {
     };
 
     const handleExportBest = () => {
-        const best = [...clients]
+        const best = [...filtered]
             .sort((a, b) => (b.totalAchats || 0) - (a.totalAchats || 0))
             .slice(0, 20);
 
@@ -147,14 +201,18 @@ export default function ClientsPage() {
 
     return (
         <AppLayout>
-            <div className="space-y-5">
-                <div className="flex items-center justify-between">
+            <div className="space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <p className="text-[10px] font-mono tracking-widest text-ink-muted uppercase mb-1">Relation Client</p>
-                        <h2 className="font-display text-3xl font-semibold text-ink">Clients</h2>
+                        <h1 className="font-display text-3xl font-bold text-ink flex items-center gap-3">
+                            <User className="text-gold" size={28} />
+                            Clients
+                        </h1>
+                        <p className="text-ink-muted text-sm mt-1">Gérez votre base de clients et leurs soldes.</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="flex bg-cream rounded-xl p-1 border border-cream-dark">
+                        <div className="flex bg-cream rounded-xl p-1 border border-cream-dark shadow-sm">
                             <button
                                 onClick={handleExportAll}
                                 className="px-4 py-2 text-xs font-bold text-ink-muted hover:text-gold transition-colors flex items-center gap-2"
@@ -175,16 +233,89 @@ export default function ClientsPage() {
                         </div>
                         {(isGestionnaire || appUser?.role === "vendeur") && (
                             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-                                <Plus size={15} /> Nouveau client
+                                <Plus size={18} /> Nouveau client
                             </button>
                         )}
                     </div>
                 </div>
 
-                {/* Search */}
-                <div className="relative">
-                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-                    <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un client..." className="input pl-9" />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="card bg-gold/5 border-gold/20 p-4 flex flex-col justify-between">
+                        <p className="text-[10px] uppercase font-black text-gold tracking-widest">
+                            {dateDebut && dateFin ? "Nouveaux Clients" : "Total Clients"}
+                        </p>
+                        <h2 className="text-2xl font-display font-black text-ink mt-2">{filtered.length}</h2>
+                    </div>
+                    <div className="card bg-zinc-900 border-zinc-800 p-4 flex flex-col justify-between">
+                        <p className="text-[10px] uppercase font-black text-white/40 tracking-widest">Dette sur sélection</p>
+                        <h2 className="text-2xl font-display font-black text-white mt-2">
+                            {formatCurrency(filtered.reduce((acc, c) => acc + (c.soldeDette || 0), 0))}
+                        </h2>
+                    </div>
+
+                    {/* Toolbar / Filters Card */}
+                    <div className="md:col-span-2 lg:col-span-2 card bg-white p-4 border-cream-dark shadow-sm flex flex-col gap-4">
+                        <div className="flex flex-col md:flex-row gap-4 items-end">
+                            {/* Search */}
+                            <div className="relative flex-1 w-full">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                                <input
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    placeholder="Rechercher (nom, téléphone)..."
+                                    className="input pl-9 w-full bg-cream/20 border-none"
+                                />
+                            </div>
+
+                            {/* Date Filter */}
+                            <div className="flex gap-2 items-center bg-cream/20 px-3 py-1.5 rounded-xl border-none w-full md:w-auto self-stretch">
+                                <div className="flex flex-col">
+                                    <span className="text-[8px] uppercase font-black text-ink-muted px-1">Créé du</span>
+                                    <input
+                                        type="date"
+                                        value={dateDebut}
+                                        onChange={e => setDateDebut(e.target.value)}
+                                        className="bg-transparent text-[10px] font-bold focus:outline-none"
+                                    />
+                                </div>
+                                <div className="w-px h-5 bg-cream-dark mx-1" />
+                                <div className="flex flex-col">
+                                    <span className="text-[8px] uppercase font-black text-ink-muted px-1">Au</span>
+                                    <input
+                                        type="date"
+                                        value={dateFin}
+                                        onChange={e => setDateFin(e.target.value)}
+                                        className="bg-transparent text-[10px] font-bold focus:outline-none"
+                                    />
+                                </div>
+                                {(dateDebut || dateFin) && (
+                                    <button
+                                        onClick={() => { setDateDebut(""); setDateFin(""); }}
+                                        className="p-1 hover:bg-white text-red-500 rounded-md transition-colors"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                            {/* User Filter */}
+                            <div className="relative">
+                                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                                <select
+                                    value={filtreUtilisateur}
+                                    onChange={e => setFiltreUtilisateur(e.target.value)}
+                                    className="bg-cream/20 text-[10px] font-bold py-1.5 pl-8 pr-6 rounded-lg appearance-none cursor-pointer border-none focus:ring-1 focus:ring-gold"
+                                >
+                                    <option value="all">Tous les auteurs</option>
+                                    {users.map(u => (
+                                        <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Grid */}
@@ -233,6 +364,16 @@ export default function ClientsPage() {
                                 </button>
                             )}
 
+                            {c.soldeDette > 0 && isGestionnaire && (
+                                <button
+                                    onClick={() => setSelectedClientForAnnulation(c)}
+                                    className="w-full mb-4 flex items-center justify-center gap-2 py-2 bg-orange-50 text-orange-600 rounded-xl hover:bg-orange-600 hover:text-white transition-all font-bold text-xs border border-orange-200"
+                                >
+                                    <Ban size={14} />
+                                    Annuler une dette
+                                </button>
+                            )}
+
                             <div className="space-y-2 text-sm text-ink-muted border-t border-cream-dark pt-4">
                                 {c.telephone && (
                                     <div className="flex items-center gap-2">
@@ -253,6 +394,19 @@ export default function ClientsPage() {
                                     </div>
                                 )}
                             </div>
+
+                            {appUser && (
+                                <HistoriqueVersements
+                                    client={c}
+                                    utilisateur={{
+                                        uid: appUser.uid,
+                                        nom: `${appUser.prenom} ${appUser.nom}`,
+                                        role: appUser.role,
+                                    }}
+                                    magasinId={currentMagasinId}
+                                    onSoldeUpdate={handleSoldeUpdate}
+                                />
+                            )}
                         </div>
                     ))}
                     {filtered.length === 0 && (
@@ -354,6 +508,15 @@ export default function ClientsPage() {
                         </form>
                     </div>
                 </div>
+            )}
+            {selectedClientForAnnulation && appUser && (
+                <AnnulationDetteModal
+                    client={selectedClientForAnnulation}
+                    utilisateur={{ uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}`, role: appUser.role }}
+                    magasinId={currentMagasinId}
+                    onClose={() => setSelectedClientForAnnulation(null)}
+                    onSuccess={handleAnnulationSuccess}
+                />
             )}
         </AppLayout>
     );

@@ -19,6 +19,7 @@ export interface AppUser {
   role: UserRole;
   actif: boolean;
   magasinId?: string | null;
+  isSuperAdmin?: boolean; // Seul le créateur du système peut gérer les licences
   createdAt: Date;
 }
 
@@ -49,6 +50,10 @@ export interface Etablissement {
   tva?: number; // %
   piedDePage?: string; // Message sur les tickets
   logoUrl?: string; // Pour le futur
+  // Abonnement / Licence
+  licenseStatus: "active" | "expired" | "trial";
+  licenseExpiryDate: Date;
+  lastPaymentDate?: Date;
   updatedAt: Date;
 }
 
@@ -64,6 +69,25 @@ export interface Client {
   soldeDette: number; // Nouveau: Somme totale due par le client
   derniereVisite?: Date;
   magasinId?: string | null;
+  utilisateurId?: string;
+  utilisateurNom?: string;
+  createdAt: Date;
+}
+
+// ── Versement de dette client ─────────────────────────────
+export interface VersementDette {
+  id: string;
+  clientId: string;
+  clientNom: string;
+  montant: number;
+  utilisateurId: string;
+  utilisateurNom: string;
+  magasinId: string | null;
+  statut: "actif" | "annulé";
+  annuléParId?: string;
+  annuléParNom?: string;
+  annuléMotif?: string;
+  annuléAt?: Date;
   createdAt: Date;
 }
 
@@ -76,6 +100,8 @@ export interface Fournisseur {
   telephone?: string;
   delaiLivraison?: number; // en jours
   soldeDette: number; // Somme totale due à ce fournisseur
+  utilisateurId?: string;
+  utilisateurNom?: string;
   createdAt: Date;
 }
 
@@ -137,6 +163,8 @@ export interface Produit {
   magasinId?: string | null;
   createdAt: Date;
   updatedAt: Date;
+  utilisateurId?: string;
+  utilisateurNom?: string;
 }
 
 // ── Mouvement de stock ────────────────────────────────────
@@ -223,6 +251,7 @@ export interface AuditLog {
   details: string;
   utilisateurId: string;
   utilisateurNom: string;
+  magasinId?: string | null;
   createdAt: Date;
 }
 

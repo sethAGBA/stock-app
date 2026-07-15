@@ -5,7 +5,7 @@ import {
 } from "firebase/firestore";
 import { format } from "date-fns";
 import { db } from "./firebase";
-import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession, SortieCaisse, Magasin, RetourClient } from "@/types";
+import type { Produit, Mouvement, Categorie, Client, Vente, Unite, Etablissement, Fournisseur, CommandeFournisseur, AppUser, TypeMouvement, AuditLog, ClotureCaisse, InventaireSession, SortieCaisse, Magasin, RetourClient, VersementDette } from "@/types";
 
 // ── Collections ───────────────────────────────────────────
 const COLS = {
@@ -25,18 +25,23 @@ const COLS = {
   sortiesCaisse: "sorties_caisse",
   magasins: "magasins",
   retours: "retours_client",
+  licences: "licences",
+  versementsDette: "versements_dette",
 };
 
-const toDate = (ts: any): Date =>
-  ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+const toDate = (ts: any): Date => {
+  if (!ts) return new Date(); // Fallback date si vide
+  return ts instanceof Timestamp ? ts.toDate() : new Date(ts);
+};
 
 // ════════════════════════════════════════
 // AUDIT LOGS
 // ════════════════════════════════════════
 export const auditService = {
-  async enregistrer(data: Omit<AuditLog, "id" | "createdAt">): Promise<void> {
+  async enregistrer(data: Omit<AuditLog, "id" | "createdAt">, magasinId?: string | null): Promise<void> {
     await addDoc(collection(db, COLS.audit), {
       ...data,
+      magasinId: magasinId || null,
       createdAt: serverTimestamp(),
     });
   },
@@ -49,6 +54,36 @@ export const auditService = {
       ...d.data(),
       createdAt: toDate(d.data().createdAt)
     } as AuditLog));
+  },
+
+  async getByPeriode(start: Date, end: Date, type?: string, utilisateurId?: string, magasinId?: string | null, limitN = 500): Promise<AuditLog[]> {
+    let q = query(
+      collection(db, COLS.audit),
+      where("createdAt", ">=", start),
+      where("createdAt", "<=", end),
+      orderBy("createdAt", "desc"),
+      limit(limitN)
+    );
+
+    if (magasinId) {
+      q = query(q, where("magasinId", "==", magasinId));
+    }
+
+    const snap = await getDocs(q);
+    let results = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as AuditLog));
+
+    if (type && type !== "all") {
+      results = results.filter(l => l.type === type);
+    }
+    if (utilisateurId && utilisateurId !== "all") {
+      results = results.filter(l => l.utilisateurId === utilisateurId);
+    }
+
+    return results;
   }
 };
 
@@ -132,7 +167,7 @@ export const sortiesCaisseService = {
     } as SortieCaisse));
   },
 
-  async getForDateRange(start: Date, end: Date, magasinId?: string | null): Promise<SortieCaisse[]> {
+  async getForDateRange(start: Date, end: Date, utilisateurId?: string, magasinId?: string | null): Promise<SortieCaisse[]> {
     let q = query(
       collection(db, COLS.sortiesCaisse),
       where("createdAt", ">=", start),
@@ -149,11 +184,17 @@ export const sortiesCaisseService = {
       );
     }
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({
+    let results = snap.docs.map(d => ({
       id: d.id,
       ...d.data(),
       createdAt: toDate(d.data().createdAt)
     } as SortieCaisse));
+
+    if (utilisateurId) {
+      results = results.filter(s => s.utilisateurId === utilisateurId);
+    }
+
+    return results;
   }
 };
 
@@ -162,10 +203,29 @@ export const sortiesCaisseService = {
 // ════════════════════════════════════════
 export const produitsService = {
   async getAll(magasinId?: string | null): Promise<Produit[]> {
-    let q = query(collection(db, COLS.produits), orderBy("designation"));
+    // Si un magasin est fourni, on retourne à la fois les produits
+    // spécifiques au magasin ET les produits globaux (magasinId == null).
     if (magasinId) {
-      q = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+      const qMag = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+      const qGlobal = query(collection(db, COLS.produits), where("magasinId", "==", null), orderBy("designation"));
+      const [snapMag, snapGlobal] = await Promise.all([getDocs(qMag), getDocs(qGlobal)]);
+      const docs = [...snapMag.docs, ...snapGlobal.docs];
+      // Deduplicate by id just in case
+      const map = new Map<string, any>();
+      docs.forEach(d => map.set(d.id, d));
+      return Array.from(map.values()).map(d => {
+        const data = d.data();
+        return {
+          id: d.id,
+          ...data,
+          createdAt: toDate(data.createdAt),
+          updatedAt: toDate(data.updatedAt),
+          datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
+        } as Produit;
+      });
     }
+
+    const q = query(collection(db, COLS.produits), orderBy("designation"));
     const snap = await getDocs(q);
     return snap.docs.map(d => {
       const data = d.data();
@@ -197,6 +257,8 @@ export const produitsService = {
       ...data,
       stockActuel: 0,
       ...(magasinId ? { magasinId } : {}),
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -213,7 +275,12 @@ export const produitsService = {
   },
 
   async update(id: string, data: Partial<Produit>, utilisateur: { uid: string; nom: string }): Promise<void> {
-    await updateDoc(doc(db, COLS.produits, id), { ...data, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, COLS.produits, id), {
+      ...data,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+      updatedAt: serverTimestamp(),
+    });
 
     await auditService.enregistrer({
       type: "stock",
@@ -242,11 +309,50 @@ export const produitsService = {
   },
 
   onSnapshot(callback: (produits: Produit[]) => void, magasinId?: string | null) {
-    let q = query(collection(db, COLS.produits), orderBy("designation"));
+    // Si un magasin est fourni, on écoute à la fois les produits du magasin
+    // et les produits globaux (magasinId == null) et on fusionne les résultats.
     if (magasinId) {
-      q = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+      const qMag = query(collection(db, COLS.produits), where("magasinId", "==", magasinId), orderBy("designation"));
+      const qGlobal = query(collection(db, COLS.produits), where("magasinId", "==", null), orderBy("designation"));
+
+      let latestMag: Map<string, any> = new Map();
+      let latestGlobal: Map<string, any> = new Map();
+
+      const emitMerged = () => {
+        const merged = new Map<string, any>(Array.from(latestMag.entries()));
+        latestGlobal.forEach((val, key) => merged.set(key, val));
+        const all = Array.from(merged.values()).map(d => {
+          const data = d.data();
+          return {
+            id: d.id,
+            ...data,
+            createdAt: toDate(data.createdAt),
+            updatedAt: toDate(data.updatedAt),
+            datePeremption: data.datePeremption ? toDate(data.datePeremption) : undefined
+          } as Produit;
+        });
+        callback(all);
+      };
+
+      const unsubMag = onSnapshot(qMag, snap => {
+        latestMag = new Map();
+        snap.docs.forEach(d => latestMag.set(d.id, d));
+        emitMerged();
+      }, error => console.error("Erreur onSnapshot produits (mag):", error));
+
+      const unsubGlobal = onSnapshot(qGlobal, snap => {
+        latestGlobal = new Map();
+        snap.docs.forEach(d => latestGlobal.set(d.id, d));
+        emitMerged();
+      }, error => console.error("Erreur onSnapshot produits (global):", error));
+
+      return () => {
+        try { unsubMag(); } catch (e) { /* ignore */ }
+        try { unsubGlobal(); } catch (e) { /* ignore */ }
+      };
     }
 
+    const q = query(collection(db, COLS.produits), orderBy("designation"));
     return onSnapshot(q,
       snap => {
         const all = snap.docs.map(d => {
@@ -517,7 +623,15 @@ export const etablissementService = {
   async get(): Promise<Etablissement | null> {
     const snap = await getDoc(doc(db, COLS.configurations, "default"));
     if (!snap.exists()) return null;
-    return { id: snap.id, ...snap.data(), updatedAt: toDate(snap.data()!.updatedAt) } as Etablissement;
+    const data = snap.data();
+    return {
+      id: snap.id,
+      ...data,
+      licenseStatus: data.licenseStatus || "trial",
+      licenseExpiryDate: toDate(data.licenseExpiryDate),
+      lastPaymentDate: data.lastPaymentDate ? toDate(data.lastPaymentDate) : undefined,
+      updatedAt: toDate(data.updatedAt)
+    } as Etablissement;
   },
 
   async save(data: Omit<Etablissement, "id" | "updatedAt">, utilisateur: { uid: string; nom: string }): Promise<void> {
@@ -533,6 +647,56 @@ export const etablissementService = {
 };
 
 // ════════════════════════════════════════
+// LICENCES / CLÉS D'ACTIVATION
+// ════════════════════════════════════════
+export const licenceService = {
+  async validerEtActiver(cle: string, utilisateur: { uid: string; nom: string }): Promise<void> {
+    const q = query(collection(db, COLS.licences), where("cle", "==", cle.trim()), limit(1));
+    const snap = await getDocs(q);
+
+    if (snap.empty) throw new Error("Clé de licence invalide");
+    
+    const docRef = snap.docs[0].ref;
+    const data = snap.docs[0].data();
+
+    if (data.utilise) throw new Error("Cette clé a déjà été utilisée");
+
+    const config = await etablissementService.get();
+    if (!config) throw new Error("Erreur système");
+
+    const baseDate = isNaN(config.licenseExpiryDate.getTime()) || config.licenseExpiryDate < new Date() 
+      ? new Date() 
+      : config.licenseExpiryDate;
+    
+    const newExpiry = new Date(baseDate);
+    newExpiry.setFullYear(newExpiry.getFullYear() + 1);
+
+    await runTransaction(db, async (transaction) => {
+      transaction.update(docRef, {
+        utilise: true,
+        utilisePar: utilisateur.uid,
+        utiliseDate: serverTimestamp()
+      });
+
+      transaction.update(doc(db, COLS.configurations, "default"), {
+        licenseStatus: "active",
+        licenseExpiryDate: Timestamp.fromDate(newExpiry),
+        lastPaymentDate: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await auditService.enregistrer({
+      type: "configuration",
+      action: "LICENCE_ACTIVEE",
+      details: `Activation annuelle par clé : ${cle.substring(0, 8)}...`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    });
+  }
+};
+
+// ════════════════════════════════════════
 // FOURNISSEURS
 // ════════════════════════════════════════
 export const fournisseursService = {
@@ -545,6 +709,8 @@ export const fournisseursService = {
     const ref = await addDoc(collection(db, COLS.fournisseurs), {
       ...data,
       soldeDette: 0,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
       createdAt: serverTimestamp()
     });
     await auditService.enregistrer({
@@ -577,6 +743,27 @@ export const fournisseursService = {
       utilisateurId: utilisateur.uid,
       utilisateurNom: utilisateur.nom,
     });
+  },
+
+  async getForDateRange(start: Date, end: Date, utilisateurId?: string): Promise<Fournisseur[]> {
+    let q = query(
+      collection(db, COLS.fournisseurs),
+      where("createdAt", ">=", start),
+      where("createdAt", "<=", end),
+      orderBy("createdAt", "desc")
+    );
+    const snap = await getDocs(q);
+    let results = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt)
+    } as Fournisseur));
+
+    if (utilisateurId) {
+      results = results.filter(f => f.utilisateurId === utilisateurId);
+    }
+
+    return results;
   },
 
   async updateSoldeDette(id: string, montant: number): Promise<void> {
@@ -637,6 +824,169 @@ export const utilisateursService = {
       utilisateurNom: admin.nom,
     });
   },
+
+  async delete(uid: string, admin: { uid: string; nom: string }): Promise<void> {
+    await deleteDoc(doc(db, COLS.utilisateurs, uid));
+
+    await auditService.enregistrer({
+      type: "admin",
+      action: "UTILISATEUR_SUPPRIME",
+      details: `Suppression définitive de l'utilisateur ${uid}`,
+      utilisateurId: admin.uid,
+      utilisateurNom: admin.nom,
+    });
+  },
+};
+
+// ════════════════════════════════════════
+// VERSEMENTS DETTE
+// ════════════════════════════════════════
+const mapVersementDette = (d: { id: string; data: () => Record<string, unknown> }): VersementDette => {
+  const data = d.data();
+  return {
+    id: d.id,
+    clientId: data.clientId as string,
+    clientNom: data.clientNom as string,
+    montant: data.montant as number,
+    utilisateurId: data.utilisateurId as string,
+    utilisateurNom: data.utilisateurNom as string,
+    magasinId: (data.magasinId as string | null) ?? null,
+    statut: data.statut as "actif" | "annulé",
+    annuléParId: data.annuléParId as string | undefined,
+    annuléParNom: data.annuléParNom as string | undefined,
+    annuléMotif: data.annuléMotif as string | undefined,
+    annuléAt: data.annuléAt ? toDate(data.annuléAt) : undefined,
+    createdAt: toDate(data.createdAt),
+  };
+};
+
+export const versementsDetteService = {
+  async creer(
+    clientId: string,
+    clientNom: string,
+    montant: number,
+    utilisateur: { uid: string; nom: string },
+    magasinId: string | null
+  ): Promise<string> {
+    if (montant <= 0) {
+      throw new Error("Le montant doit être supérieur à zéro");
+    }
+
+    const clientRef = doc(db, COLS.clients, clientId);
+    const versementRef = doc(collection(db, COLS.versementsDette));
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(clientRef);
+      if (!snap.exists()) throw new Error("Client introuvable");
+
+      const data = snap.data();
+      const soldeDette = data.soldeDette || 0;
+      if (montant > soldeDette) {
+        throw new Error("Le montant dépasse le solde de dette");
+      }
+
+      tx.update(clientRef, {
+        soldeDette: soldeDette - montant,
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.set(versementRef, {
+        clientId,
+        clientNom,
+        montant,
+        utilisateurId: utilisateur.uid,
+        utilisateurNom: utilisateur.nom,
+        magasinId: magasinId ?? null,
+        statut: "actif",
+        createdAt: serverTimestamp(),
+      });
+    });
+
+    return versementRef.id;
+  },
+
+  async getByClient(
+    clientId: string,
+    magasinId?: string | null,
+    limitN = 10
+  ): Promise<VersementDette[]> {
+    let q;
+    if (magasinId !== undefined && magasinId !== null) {
+      q = query(
+        collection(db, COLS.versementsDette),
+        where("clientId", "==", clientId),
+        where("magasinId", "==", magasinId),
+        orderBy("createdAt", "desc"),
+        limit(limitN)
+      );
+    } else {
+      q = query(
+        collection(db, COLS.versementsDette),
+        where("clientId", "==", clientId),
+        orderBy("createdAt", "desc"),
+        limit(limitN)
+      );
+    }
+
+    const snap = await getDocs(q);
+    return snap.docs.map(d => mapVersementDette(d));
+  },
+
+  async annuler(
+    versementId: string,
+    clientId: string,
+    motif: string,
+    utilisateur: { uid: string; nom: string; role: string },
+    magasinId: string | null
+  ): Promise<void> {
+    if (utilisateur.role !== "admin" && utilisateur.role !== "gestionnaire") {
+      throw new Error("Accès refusé : rôle insuffisant");
+    }
+
+    const versementRef = doc(db, COLS.versementsDette, versementId);
+    const clientRef = doc(db, COLS.clients, clientId);
+
+    let clientNom = "";
+    let montant = 0;
+
+    await runTransaction(db, async (tx) => {
+      const versementSnap = await tx.get(versementRef);
+      if (!versementSnap.exists()) throw new Error("Versement introuvable");
+
+      const versementData = versementSnap.data();
+      if (versementData.statut === "annulé") {
+        throw new Error("Ce versement est déjà annulé");
+      }
+
+      montant = versementData.montant;
+      clientNom = versementData.clientNom;
+
+      const clientSnap = await tx.get(clientRef);
+      if (!clientSnap.exists()) throw new Error("Client introuvable");
+
+      const clientData = clientSnap.data();
+      tx.update(versementRef, {
+        statut: "annulé",
+        annuléParId: utilisateur.uid,
+        annuléParNom: utilisateur.nom,
+        annuléMotif: motif,
+        annuléAt: serverTimestamp(),
+      });
+
+      tx.update(clientRef, {
+        soldeDette: (clientData.soldeDette || 0) + montant,
+        updatedAt: serverTimestamp(),
+      });
+    });
+
+    await auditService.enregistrer({
+      type: "client",
+      action: "VERSEMENT_DETTE_ANNULE",
+      details: `Annulation versement ${montant} F pour ${clientNom} (ID: ${clientId}). Motif: ${motif}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    }, magasinId);
+  },
 };
 
 // ════════════════════════════════════════
@@ -658,6 +1008,8 @@ export const clientsService = {
       totalAchats: 0,
       soldeDette: 0,
       magasinId: magasinId || null,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
       createdAt: serverTimestamp(),
     });
 
@@ -696,12 +1048,60 @@ export const clientsService = {
     });
   },
 
+  async getForDateRange(start: Date, end: Date, utilisateurId?: string, magasinId?: string | null): Promise<Client[]> {
+    let q = query(
+      collection(db, COLS.clients),
+      where("createdAt", ">=", start),
+      where("createdAt", "<=", end),
+      orderBy("createdAt", "desc")
+    );
+    if (magasinId) {
+      q = query(
+        collection(db, COLS.clients),
+        where("magasinId", "==", magasinId),
+        where("createdAt", ">=", start),
+        where("createdAt", "<=", end),
+        orderBy("createdAt", "desc")
+      );
+    }
+    const snap = await getDocs(q);
+    let results = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      createdAt: toDate(d.data().createdAt),
+      derniereVisite: d.data().derniereVisite ? toDate(d.data().derniereVisite) : undefined
+    } as Client));
+
+    if (utilisateurId) {
+      results = results.filter(c => c.utilisateurId === utilisateurId);
+    }
+
+    return results;
+  },
+
   // Enregistrer un versement pour épurer une dette
-  async payerDette(clientId: string, montant: number): Promise<void> {
+  async payerDette(
+    clientId: string,
+    montant: number,
+    utilisateur?: { uid: string; nom: string },
+    magasinId?: string | null,
+    clientNom?: string
+  ): Promise<void> {
+    if (utilisateur) {
+      await versementsDetteService.creer(
+        clientId,
+        clientNom ?? "",
+        montant,
+        utilisateur,
+        magasinId ?? null
+      );
+      return;
+    }
+
     const clientRef = doc(db, COLS.clients, clientId);
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(clientRef);
-      if (!snap.exists()) throw "Client introuvable";
+      if (!snap.exists()) throw new Error("Client introuvable");
       const data = snap.data();
       const nouveauSolde = (data.soldeDette || 0) - montant;
       tx.update(clientRef, {
@@ -709,6 +1109,53 @@ export const clientsService = {
         updatedAt: serverTimestamp()
       });
     });
+  },
+
+  // Annuler tout ou partie de la dette d'un client (admin/gestionnaire uniquement)
+  async annulerDette(
+    clientId: string,
+    montant: number,
+    motif: string,
+    utilisateur: { uid: string; nom: string; role: string },
+    magasinId?: string | null
+  ): Promise<number> {
+    if (utilisateur.role !== "admin" && utilisateur.role !== "gestionnaire") {
+      throw new Error("Accès refusé : rôle insuffisant");
+    }
+
+    const clientRef = doc(db, COLS.clients, clientId);
+    let clientNom = "";
+    let soldeAvant = 0;
+    let nouveauSolde = 0;
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(clientRef);
+      if (!snap.exists()) throw new Error("Client introuvable");
+
+      const data = snap.data();
+      soldeAvant = data.soldeDette || 0;
+      clientNom = `${data.prenom ? data.prenom + " " : ""}${data.nom}`;
+
+      if (soldeAvant < montant) {
+        throw new Error("Le montant dépasse le solde de dette");
+      }
+
+      nouveauSolde = soldeAvant - montant;
+      tx.update(clientRef, {
+        soldeDette: nouveauSolde,
+        updatedAt: serverTimestamp()
+      });
+    });
+
+    await auditService.enregistrer({
+      type: "client",
+      action: "DETTE_ANNULEE",
+      details: `Annulation dette ${montant} F pour ${clientNom} (ID: ${clientId}). Solde avant: ${soldeAvant} F → après: ${nouveauSolde} F. Motif: ${motif}`,
+      utilisateurId: utilisateur.uid,
+      utilisateurNom: utilisateur.nom,
+    }, magasinId);
+
+    return nouveauSolde;
   }
 };
 
@@ -1252,7 +1699,7 @@ export const cloturesService = {
       details: `Clôture ${cible} du ${format(data.date, "dd/MM/yyyy")} par ${data.utilisateurNom}. Total: ${data.totalVentes} F`,
       utilisateurId: data.utilisateurId,
       utilisateurNom: data.utilisateurNom
-    });
+    }, magasinId);
 
     return ref.id;
   },
@@ -1275,6 +1722,33 @@ export const cloturesService = {
       date: d.data().date ? toDate(d.data().date) : new Date(),
       createdAt: toDate(d.data().createdAt)
     } as ClotureCaisse));
+  },
+
+  async getForDateRange(start: Date, end: Date, vendeurId?: string, magasinId?: string | null): Promise<ClotureCaisse[]> {
+    let q = query(
+      collection(db, COLS.clotures),
+      where("date", ">=", start),
+      where("date", "<=", end),
+      orderBy("date", "desc")
+    );
+
+    if (magasinId) {
+      q = query(q, where("magasinId", "==", magasinId));
+    }
+
+    const snap = await getDocs(q);
+    let results = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+      date: d.data().date ? toDate(d.data().date) : new Date(),
+      createdAt: toDate(d.data().createdAt)
+    } as ClotureCaisse));
+
+    if (vendeurId && vendeurId !== "all") {
+      results = results.filter(c => c.vendeurId === vendeurId || c.utilisateurId === vendeurId);
+    }
+
+    return results;
   }
 };
 
@@ -1475,7 +1949,7 @@ export const retoursService = {
     } as RetourClient));
   },
 
-  async getForDateRange(start: Date, end: Date, magasinId?: string | null): Promise<RetourClient[]> {
+  async getForDateRange(start: Date, end: Date, utilisateurId?: string, magasinId?: string | null): Promise<RetourClient[]> {
     let q = query(
       collection(db, COLS.retours),
       where("createdAt", ">=", start),
@@ -1492,10 +1966,56 @@ export const retoursService = {
       );
     }
     const snap = await getDocs(q);
-    return snap.docs.map(d => ({
+    let results = snap.docs.map(d => ({
       id: d.id,
       ...d.data(),
       createdAt: toDate(d.data().createdAt)
     } as RetourClient));
+
+    if (utilisateurId) {
+      results = results.filter(r => r.utilisateurId === utilisateurId);
+    }
+
+    return results;
+  }
+};
+
+// ── MAINTENANCE & INITIALISATION ──────────────────────────
+export const maintenanceService = {
+  async reinitialiserDonnees(admin: { uid: string; nom: string }): Promise<void> {
+    const collectionsToClear = [
+      "produits",
+      "mouvements",
+      "categories",
+      "fournisseurs",
+      "clients",
+      "ventes",
+      "unites",
+      "commandes_fournisseurs",
+      "clotures_caisse",
+      "inventaires",
+      "sorties_caisse",
+      "retours_client"
+      // On ne vide pas audit_logs pour garder la trace de l'action
+    ];
+
+    for (const colName of collectionsToClear) {
+      const snap = await getDocs(collection(db, colName));
+
+      // Suppression par lots de 500 (limite Firestore)
+      const docs = snap.docs;
+      for (let i = 0; i < docs.length; i += 500) {
+        const chunk = docs.slice(i, i + 500);
+        await Promise.all(chunk.map(d => deleteDoc(doc(db, colName, d.id))));
+      }
+    }
+
+    await auditService.enregistrer({
+      type: "admin",
+      action: "INITIALISATION_DONNEES",
+      details: `Réinitialisation complète des données effectuée par l'administrateur.`,
+      utilisateurId: admin.uid,
+      utilisateurNom: admin.nom,
+    });
   }
 };
