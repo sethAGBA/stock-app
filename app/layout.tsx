@@ -4,6 +4,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import { NotificationProvider } from "@/lib/notification-context";
 import { Toaster } from "react-hot-toast";
 import ConnectionStatus from "@/components/common/ConnectionStatus";
+import { LicenseGuard } from "@/components/auth/LicenseGuard";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -32,7 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={`${inter.variable} font-sans antialiased`}>
         <AuthProvider>
           <NotificationProvider>
-            {children}
+            <LicenseGuard>
+              {children}
+            </LicenseGuard>
             <ConnectionStatus />
             <Toaster position="top-right" toastOptions={{
               style: { fontFamily: "var(--font-inter)", fontSize: "13px" },

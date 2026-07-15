@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { utilisateursService } from "@/lib/db";
+import { utilisateursService, etablissementService } from "@/lib/db";
 import { auth } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import toast from "react-hot-toast";
@@ -58,9 +58,21 @@ export default function SetupPage() {
                 email: form.email,
                 role: "admin",
                 actif: true,
+                isSuperAdmin: true,
             }, { uid, nom: `${form.prenom} ${form.nom}` });
 
-            toast.success("Administrateur configuré avec succès !");
+            // 3. Initialiser la configuration globale avec une période d'essai
+            const trialExpiry = new Date();
+            trialExpiry.setDate(trialExpiry.getDate() + 14); // 14 jours d'essai
+
+            await etablissementService.save({
+                nom: "Ma Boutique",
+                devise: "XOF",
+                licenseStatus: "trial",
+                licenseExpiryDate: trialExpiry,
+            }, { uid, nom: `${form.prenom} ${form.nom}` });
+
+            toast.success("Administrateur et système configurés !");
             router.push("/login"); // Le middleware ou l'auth context devrait prendre le relais
         } catch (err: any) {
             console.error(err);

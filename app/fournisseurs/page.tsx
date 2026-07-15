@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { fournisseursService, commandesFournisseursService } from "@/lib/db";
-import type { Fournisseur, CommandeFournisseur } from "@/types";
-import { Plus, Edit2, Trash2, Truck, X, Search } from "lucide-react";
+import { fournisseursService, commandesFournisseursService, utilisateursService } from "@/lib/db";
+import type { Fournisseur, CommandeFournisseur, AppUser } from "@/types";
+import { Plus, Edit2, Trash2, Truck, X, Search, User } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
 import clsx from "clsx";
@@ -25,20 +25,49 @@ export default function FournisseursPage() {
   const [form, setForm] = useState(EMPTY);
   const [loading, setLoading] = useState(false);
 
+  // Filtres
+  const [dateDebut, setDateDebut] = useState("");
+  const [dateFin, setDateFin] = useState("");
+  const [filtreUtilisateur, setFiltreUtilisateur] = useState("all");
+  const [users, setUsers] = useState<AppUser[]>([]);
+
   const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
   const isAdmin = appUser?.role === "admin";
 
   useEffect(() => {
     if (!appUser) return;
-    fournisseursService.getAll().then(setFournisseurs);
-  }, [appUser]);
 
-  const reload = () => fournisseursService.getAll().then(setFournisseurs);
+    if (dateDebut && dateFin) {
+      const start = new Date(dateDebut);
+      const end = new Date(dateFin);
+      end.setHours(23, 59, 59);
+      fournisseursService.getForDateRange(start, end).then(setFournisseurs);
+    } else {
+      fournisseursService.getAll().then(setFournisseurs);
+    }
 
-  const filtered = fournisseurs.filter(f =>
-    f.nom.toLowerCase().includes(search.toLowerCase()) ||
-    f.contact.toLowerCase().includes(search.toLowerCase())
-  );
+    utilisateursService.getAll(currentMagasinId).then(setUsers);
+  }, [appUser, dateDebut, dateFin, currentMagasinId]);
+
+  const reload = () => {
+    if (dateDebut && dateFin) {
+      const start = new Date(dateDebut);
+      const end = new Date(dateFin);
+      end.setHours(23, 59, 59);
+      fournisseursService.getForDateRange(start, end).then(setFournisseurs);
+    } else {
+      fournisseursService.getAll().then(setFournisseurs);
+    }
+  };
+
+  const filtered = fournisseurs.filter(f => {
+    const matchesSearch = f.nom.toLowerCase().includes(search.toLowerCase()) ||
+      f.contact.toLowerCase().includes(search.toLowerCase());
+
+    const matchesUser = filtreUtilisateur === "all" || f.utilisateurId === filtreUtilisateur;
+
+    return matchesSearch && matchesUser;
+  });
 
   const openCreate = () => {
     setEditing(null);
@@ -190,269 +219,346 @@ export default function FournisseursPage() {
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-120px)] gap-6">
-        {/* Left: Supplier List */}
-        <div className="w-1/3 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-display text-2xl font-semibold text-ink">Fournisseurs</h2>
-            </div>
-            {isGestionnaire && (
-              <button onClick={openCreate} className="btn-secondary p-2 rounded-full shadow-sm">
-                <Plus size={18} />
-              </button>
-            )}
+      <div className="space-y-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-mono tracking-widest text-ink-muted uppercase mb-1">Approvisionnement</p>
+            <h1 className="font-display text-3xl font-bold text-ink flex items-center gap-3">
+              <Truck className="text-gold" size={28} />
+              Fournisseurs
+            </h1>
+            <p className="text-ink-muted text-sm mt-1">Gérez vos partenaires et commandes d'approvisionnement.</p>
+          </div>
+          {isGestionnaire && (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <Plus size={18} /> Nouveau Fournisseur
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="card bg-gold/5 border-gold/20 p-4 flex flex-col justify-between shadow-sm">
+            <p className="text-[10px] uppercase font-black text-gold tracking-widest">
+              {dateDebut && dateFin ? "Nouveaux Partenaires" : "Total Fournisseurs"}
+            </p>
+            <h2 className="text-2xl font-display font-black text-ink mt-2">{filtered.length}</h2>
+          </div>
+          <div className="card bg-zinc-900 border-zinc-800 p-4 flex flex-col justify-between shadow-lg">
+            <p className="text-[10px] uppercase font-black text-white/40 tracking-widest">Dette sur sélection</p>
+            <h2 className="text-2xl font-display font-black text-white mt-2">
+              {formatCurrency(filtered.reduce((acc, f) => acc + (f.soldeDette || 0), 0))}
+            </h2>
           </div>
 
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Rechercher..." className="input pl-9" />
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-            {filtered.map(f => (
-              <div
-                key={f.id}
-                onClick={() => setSelectedFournisseur(f)}
-                className={clsx(
-                  "card p-4 hover:border-gold cursor-pointer transition-all",
-                  selectedFournisseur?.id === f.id ? "border-gold bg-gold/5 shadow-md scale-[1.02]" : "hover:shadow-sm"
-                )}
-              >
-                <div className="flex justify-between items-start">
-                  <h3 className="font-semibold text-ink">{f.nom}</h3>
-                  {f.delaiLivraison && <span className="text-[10px] font-bold text-ink-muted bg-cream px-2 py-0.5 rounded uppercase tracking-wider">{f.delaiLivraison}j</span>}
-                </div>
-                <p className="text-sm text-ink-muted mt-1">{f.contact}</p>
+          <div className="md:col-span-2 lg:col-span-2 card bg-white p-4 border-cream-dark shadow-sm flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row gap-4 items-end">
+              <div className="relative flex-1 w-full">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                <input
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Rechercher (nom, contact)..."
+                  className="input pl-9 w-full bg-cream/20 border-none"
+                />
               </div>
-            ))}
+
+              <div className="flex gap-2 items-center bg-cream/20 px-3 py-1.5 rounded-xl border-none w-full md:w-auto self-stretch">
+                <div className="flex flex-col">
+                  <span className="text-[8px] uppercase font-black text-ink-muted px-1">Créé du</span>
+                  <input
+                    type="date"
+                    value={dateDebut}
+                    onChange={e => setDateDebut(e.target.value)}
+                    className="bg-transparent text-[10px] font-bold focus:outline-none"
+                  />
+                </div>
+                <div className="w-px h-5 bg-cream-dark mx-1" />
+                <div className="flex flex-col">
+                  <span className="text-[8px] uppercase font-black text-ink-muted px-1">Au</span>
+                  <input
+                    type="date"
+                    value={dateFin}
+                    onChange={e => setDateFin(e.target.value)}
+                    className="bg-transparent text-[10px] font-bold focus:outline-none"
+                  />
+                </div>
+                {(dateDebut || dateFin) && (
+                  <button
+                    onClick={() => { setDateDebut(""); setDateFin(""); }}
+                    className="p-1 hover:bg-white text-red-500 rounded-md transition-colors"
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <div className="relative">
+                <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                <select
+                  value={filtreUtilisateur}
+                  onChange={e => setFiltreUtilisateur(e.target.value)}
+                  className="bg-cream/20 text-[10px] font-bold py-1.5 pl-8 pr-6 rounded-lg appearance-none cursor-pointer border-none focus:ring-1 focus:ring-gold"
+                >
+                  <option value="all">Tous les auteurs</option>
+                  {users.map(u => (
+                    <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Right: Details & Orders */}
-        <div className="flex-1 card p-0 overflow-hidden flex flex-col shadow-xl border-cream-dark">
-          {selectedFournisseur ? (
-            <>
-              {/* Header */}
-              <div className="p-6 border-b border-cream-dark bg-white">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h2 className="font-display text-3xl font-bold text-ink">{selectedFournisseur.nom}</h2>
-                    <div className="flex gap-4 mt-1 text-sm text-ink-muted font-medium">
-                      <span>{selectedFournisseur.contact}</span>
-                      {selectedFournisseur.telephone && <span className="text-gold">•</span>}
-                      <span>{selectedFournisseur.telephone}</span>
+        <div className="flex h-[calc(100vh-320px)] gap-6">
+          {/* Left: Supplier List */}
+          <div className="w-1/3 flex flex-col gap-4">
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-2">
+              {filtered.map(f => (
+                <div
+                  key={f.id}
+                  onClick={() => setSelectedFournisseur(f)}
+                  className={clsx(
+                    "card p-4 hover:border-gold cursor-pointer transition-all",
+                    selectedFournisseur?.id === f.id ? "border-gold bg-gold/5 shadow-md scale-[1.02]" : "hover:shadow-sm"
+                  )}
+                >
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-semibold text-ink">{f.nom}</h3>
+                    {f.delaiLivraison && <span className="text-[10px] font-bold text-ink-muted bg-cream px-2 py-0.5 rounded uppercase tracking-wider">{f.delaiLivraison}j</span>}
+                  </div>
+                  <p className="text-sm text-ink-muted mt-1">{f.contact}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Details & Orders */}
+          <div className="flex-1 card p-0 overflow-hidden flex flex-col shadow-xl border-cream-dark">
+            {selectedFournisseur ? (
+              <>
+                {/* Header */}
+                <div className="p-6 border-b border-cream-dark bg-white">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <h2 className="font-display text-3xl font-bold text-ink">{selectedFournisseur.nom}</h2>
+                      <div className="flex gap-4 mt-1 text-sm text-ink-muted font-medium">
+                        <span>{selectedFournisseur.contact}</span>
+                        {selectedFournisseur.telephone && <span className="text-gold">•</span>}
+                        <span>{selectedFournisseur.telephone}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      {isGestionnaire && <button onClick={() => openEdit(selectedFournisseur)} className="btn-secondary py-2">Modifier</button>}
+                      {isAdmin && <button onClick={() => handleDelete(selectedFournisseur.id)} className="text-red-400 hover:text-red-600 p-2 transition-colors"><Trash2 size={18} /></button>}
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    {isGestionnaire && <button onClick={() => openEdit(selectedFournisseur)} className="btn-secondary py-2">Modifier</button>}
-                    {isAdmin && <button onClick={() => handleDelete(selectedFournisseur.id)} className="text-red-400 hover:text-red-600 p-2 transition-colors"><Trash2 size={18} /></button>}
+
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-cream/30 p-3 rounded-xl border border-cream-dark">
+                      <p className="text-[10px] uppercase font-bold text-ink-muted tracking-widest mb-1">Commandes</p>
+                      <p className="text-xl font-bold text-ink">{commandes.length}</p>
+                    </div>
+                    <div className="bg-red-50 p-3 rounded-xl border border-red-100">
+                      <p className="text-[10px] uppercase font-bold text-red-600 tracking-widest mb-1">Dette Totale</p>
+                      <p className="text-xl font-bold text-red-700">{formatPrice(totalDette)} <span className="text-xs">F</span></p>
+                    </div>
+                    <div className="bg-green-50 p-3 rounded-xl border border-green-100">
+                      <p className="text-[10px] uppercase font-bold text-green-600 tracking-widest mb-1">Payé (Historique)</p>
+                      <p className="text-xl font-bold text-green-700">{formatCurrency(commandes.reduce((acc, c) => acc + (c.montantPaye || 0), 0))}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-8 text-sm font-semibold border-b-2 border-cream-dark">
+                    <button
+                      onClick={() => setActiveTab("info")}
+                      className={clsx("pb-3 border-b-4 -mb-0.5 transition-all outline-none", activeTab === "info" ? "border-gold text-gold" : "border-transparent text-ink-muted hover:text-ink")}
+                    >
+                      Informations
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("commandes")}
+                      className={clsx("pb-3 border-b-4 -mb-0.5 transition-all outline-none", activeTab === "commandes" ? "border-gold text-gold" : "border-transparent text-ink-muted hover:text-ink")}
+                    >
+                      Historique Commandes
+                    </button>
                   </div>
                 </div>
 
-                {/* Summary Stats */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                  <div className="bg-cream/30 p-3 rounded-xl border border-cream-dark">
-                    <p className="text-[10px] uppercase font-bold text-ink-muted tracking-widest mb-1">Commandes</p>
-                    <p className="text-xl font-bold text-ink">{commandes.length}</p>
-                  </div>
-                  <div className="bg-red-50 p-3 rounded-xl border border-red-100">
-                    <p className="text-[10px] uppercase font-bold text-red-600 tracking-widest mb-1">Dette Totale</p>
-                    <p className="text-xl font-bold text-red-700">{formatPrice(totalDette)} <span className="text-xs">F</span></p>
-                  </div>
-                  <div className="bg-green-50 p-3 rounded-xl border border-green-100">
-                    <p className="text-[10px] uppercase font-bold text-green-600 tracking-widest mb-1">Payé (Historique)</p>
-                    <p className="text-xl font-bold text-green-700">{formatCurrency(commandes.reduce((acc, c) => acc + (c.montantPaye || 0), 0))}</p>
-                  </div>
-                </div>
-
-                <div className="flex gap-8 text-sm font-semibold border-b-2 border-cream-dark">
-                  <button
-                    onClick={() => setActiveTab("info")}
-                    className={clsx("pb-3 border-b-4 -mb-0.5 transition-all outline-none", activeTab === "info" ? "border-gold text-gold" : "border-transparent text-ink-muted hover:text-ink")}
-                  >
-                    Informations
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("commandes")}
-                    className={clsx("pb-3 border-b-4 -mb-0.5 transition-all outline-none", activeTab === "commandes" ? "border-gold text-gold" : "border-transparent text-ink-muted hover:text-ink")}
-                  >
-                    Historique Commandes
-                  </button>
-                </div>
-              </div>
-
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto bg-gray-50/50 p-6">
-                {activeTab === "info" && (
-                  <div className="grid grid-cols-2 gap-8">
-                    <div className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-xs uppercase font-bold text-ink-muted">Email Pro</label>
-                        <p className="text-ink font-medium">{selectedFournisseur.email || "Non renseigné"}</p>
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto bg-gray-50/50 p-6">
+                  {activeTab === "info" && (
+                    <div className="grid grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <label className="text-xs uppercase font-bold text-ink-muted">Email Pro</label>
+                          <p className="text-ink font-medium">{selectedFournisseur.email || "Non renseigné"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs uppercase font-bold text-ink-muted">Adresse / Localisation</label>
+                          <p className="text-ink font-medium">Lomé, Togo (Standard)</p>
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        <label className="text-xs uppercase font-bold text-ink-muted">Adresse / Localisation</label>
-                        <p className="text-ink font-medium">Lomé, Togo (Standard)</p>
+                      <div className="space-y-4">
+                        <div className="space-y-1">
+                          <label className="text-xs uppercase font-bold text-ink-muted">Téléphone</label>
+                          <p className="text-ink font-medium">{selectedFournisseur.telephone || "Non renseigné"}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-xs uppercase font-bold text-ink-muted">Délai estimé de livraison</label>
+                          <p className="text-ink font-medium">{selectedFournisseur.delaiLivraison} jours calendaires</p>
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <div className="space-y-1">
-                        <label className="text-xs uppercase font-bold text-ink-muted">Téléphone</label>
-                        <p className="text-ink font-medium">{selectedFournisseur.telephone || "Non renseigné"}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-xs uppercase font-bold text-ink-muted">Délai estimé de livraison</label>
-                        <p className="text-ink font-medium">{selectedFournisseur.delaiLivraison} jours calendaires</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {activeTab === "commandes" && (
-                  <div className="space-y-4">
-                    {isGestionnaire && (
-                      <button onClick={() => setShowOrderModal(true)} className="btn-primary w-full flex items-center justify-center gap-3 py-4 shadow-lg active:scale-95 transition-all">
-                        <Plus size={20} /> Émettre une nouvelle commande
-                      </button>
-                    )}
-
+                  {activeTab === "commandes" && (
                     <div className="space-y-4">
-                      {commandes.map(cmd => (
-                        <div key={cmd.id} className="bg-white p-5 rounded-2xl border border-cream-dark shadow-sm hover:shadow-md transition-shadow">
-                          <div className="flex justify-between items-start">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className={clsx(
-                                  "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded",
-                                  cmd.statut === "recu" ? "bg-green-100 text-green-700" :
-                                    cmd.statut === "annulee" ? "bg-red-100 text-red-700" :
-                                      cmd.statut === "commandee" ? "bg-amber-100 text-amber-700" :
-                                        "bg-cream text-ink-muted"
-                                )}>
-                                  {cmd.statut === "recu" ? "Réceptionné" :
-                                    cmd.statut === "commandee" ? "En attente" :
-                                      cmd.statut === "brouillon" ? "Brouillon" : "Annulée"}
-                                </span>
-                                {cmd.statutPaiement && (
+                      {isGestionnaire && (
+                        <button onClick={() => setShowOrderModal(true)} className="btn-primary w-full flex items-center justify-center gap-3 py-4 shadow-lg active:scale-95 transition-all">
+                          <Plus size={20} /> Émettre une nouvelle commande
+                        </button>
+                      )}
+
+                      <div className="space-y-4">
+                        {commandes.map(cmd => (
+                          <div key={cmd.id} className="bg-white p-5 rounded-2xl border border-cream-dark shadow-sm hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
                                   <span className={clsx(
                                     "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded",
-                                    cmd.statutPaiement === "paye" ? "bg-green-100 text-green-700" :
-                                      cmd.statutPaiement === "partiel" ? "bg-blue-100 text-blue-700" :
-                                        "bg-red-100 text-red-700"
+                                    cmd.statut === "recu" ? "bg-green-100 text-green-700" :
+                                      cmd.statut === "annulee" ? "bg-red-100 text-red-700" :
+                                        cmd.statut === "commandee" ? "bg-amber-100 text-amber-700" :
+                                          "bg-cream text-ink-muted"
                                   )}>
-                                    {cmd.statutPaiement === "paye" ? "Payé" :
-                                      cmd.statutPaiement === "partiel" ? "Partiel" : "Non payé"}
+                                    {cmd.statut === "recu" ? "Réceptionné" :
+                                      cmd.statut === "commandee" ? "En attente" :
+                                        cmd.statut === "brouillon" ? "Brouillon" : "Annulée"}
                                   </span>
+                                  {cmd.statutPaiement && (
+                                    <span className={clsx(
+                                      "text-[10px] uppercase font-black tracking-widest px-2 py-1 rounded",
+                                      cmd.statutPaiement === "paye" ? "bg-green-100 text-green-700" :
+                                        cmd.statutPaiement === "partiel" ? "bg-blue-100 text-blue-700" :
+                                          "bg-red-100 text-red-700"
+                                    )}>
+                                      {cmd.statutPaiement === "paye" ? "Payé" :
+                                        cmd.statutPaiement === "partiel" ? "Partiel" : "Non payé"}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-mono text-ink-muted">#{cmd.id.slice(0, 8).toUpperCase()}</span>
+                                </div>
+                                <p className="text-base font-bold text-ink">
+                                  {format(cmd.date, "dd MMM yyyy", { locale: fr })}
+                                </p>
+
+                                {/* Traçabilité */}
+                                <div className="pt-2 space-y-1">
+                                  <p className="text-[10px] text-ink-muted font-medium">Créé par {cmd.createdByName || "Système"}</p>
+                                  {cmd.orderedByName && <p className="text-[10px] text-amber-600 font-bold">Commandé par {cmd.orderedByName}</p>}
+                                  {cmd.receivedByName && <p className="text-[10px] text-green-600 font-bold">Réceptionné par {cmd.receivedByName}</p>}
+                                  {cmd.cancelledByName && <p className="text-[10px] text-red-500 font-bold">Annulé par {cmd.cancelledByName}</p>}
+                                </div>
+
+                                {cmd.motifAnnulation && (
+                                  <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-2 rounded-lg border border-red-100 italic">
+                                    " {cmd.motifAnnulation} "
+                                  </div>
                                 )}
-                                <span className="text-[10px] font-mono text-ink-muted">#{cmd.id.slice(0, 8).toUpperCase()}</span>
+
+                                <p className="text-xs text-ink-muted underline mt-2">
+                                  {cmd.lignes.length} article(s) • {formatCurrency(cmd.totalTTC)}
+                                </p>
                               </div>
-                              <p className="text-base font-bold text-ink">
-                                {format(cmd.date, "dd MMM yyyy", { locale: fr })}
-                              </p>
-
-                              {/* Traçabilité */}
-                              <div className="pt-2 space-y-1">
-                                <p className="text-[10px] text-ink-muted font-medium">Créé par {cmd.createdByName || "Système"}</p>
-                                {cmd.orderedByName && <p className="text-[10px] text-amber-600 font-bold">Commandé par {cmd.orderedByName}</p>}
-                                {cmd.receivedByName && <p className="text-[10px] text-green-600 font-bold">Réceptionné par {cmd.receivedByName}</p>}
-                                {cmd.cancelledByName && <p className="text-[10px] text-red-500 font-bold">Annulé par {cmd.cancelledByName}</p>}
+                              <div className="text-right">
+                                <p className="text-xl font-black text-ink">{formatPrice(cmd.totalTTC)} <span className="text-xs font-normal">F</span></p>
+                                {cmd.montantPaye > 0 && <p className="text-[10px] text-green-600 font-bold tracking-tight">SOLDE PAYÉ : {formatCurrency(cmd.montantPaye)}</p>}
+                                {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && cmd.statut !== "annulee" && (
+                                  <p className="text-[10px] text-red-500 font-bold tracking-tight">RESTE À PAYER : {formatCurrency(cmd.totalTTC - (cmd.montantPaye || 0))}</p>
+                                )}
                               </div>
-
-                              {cmd.motifAnnulation && (
-                                <div className="mt-2 text-[10px] bg-red-50 text-red-700 p-2 rounded-lg border border-red-100 italic">
-                                  " {cmd.motifAnnulation} "
-                                </div>
-                              )}
-
-                              <p className="text-xs text-ink-muted underline mt-2">
-                                {cmd.lignes.length} article(s) • {formatCurrency(cmd.totalTTC)}
-                              </p>
                             </div>
-                            <div className="text-right">
-                              <p className="text-xl font-black text-ink">{formatPrice(cmd.totalTTC)} <span className="text-xs font-normal">F</span></p>
-                              {cmd.montantPaye > 0 && <p className="text-[10px] text-green-600 font-bold tracking-tight">SOLDE PAYÉ : {formatCurrency(cmd.montantPaye)}</p>}
-                              {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && cmd.statut !== "annulee" && (
-                                <p className="text-[10px] text-red-500 font-bold tracking-tight">RESTE À PAYER : {formatCurrency(cmd.totalTTC - (cmd.montantPaye || 0))}</p>
-                              )}
-                            </div>
+
+                            {isGestionnaire && (
+                              <div className="flex gap-3 mt-5 pt-4 border-t border-cream-dark">
+                                {cmd.statut === "brouillon" && (
+                                  <>
+                                    <button
+                                      onClick={() => handleUpdateStatus(cmd.id, "commandee")}
+                                      className="flex-1 btn-primary py-2 text-xs"
+                                    >
+                                      Passer commande
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateStatus(cmd.id, "annulee")}
+                                      className="flex-1 btn-secondary py-2 text-xs text-red-500 border-red-100 hover:bg-red-50"
+                                    >
+                                      Annuler
+                                    </button>
+                                  </>
+                                )}
+                                {(cmd.statut === "commandee" || cmd.statut === "recu") && (
+                                  <>
+                                    {cmd.statut === "commandee" && (
+                                      <button
+                                        onClick={() => handleReception(cmd)}
+                                        className="flex-1 btn-primary py-2 text-xs bg-green-600 hover:bg-green-700 border-green-700"
+                                      >
+                                        Réceptionner
+                                      </button>
+                                    )}
+                                    {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && (
+                                      <button
+                                        onClick={() => handlePaiement(cmd)}
+                                        className="flex-1 btn-secondary py-2 text-xs font-bold text-ink hover:bg-cream"
+                                      >
+                                        Enregistrer Paiement
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => handleUpdateStatus(cmd.id, "annulee")}
+                                      className="flex-1 btn-secondary py-2 text-xs"
+                                    >
+                                      Annuler
+                                    </button>
+                                  </>
+                                )}
+                                {cmd.statut === "recu" && cmd.totalTTC - (cmd.montantPaye || 0) <= 0 && (
+                                  <div className="w-full text-center text-[10px] text-green-600 font-bold bg-green-50 py-1 rounded">
+                                    STOCK MIS À JOUR LE {format(cmd.updatedAt, "dd/MM/yyyy")}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-
-                          {isGestionnaire && (
-                            <div className="flex gap-3 mt-5 pt-4 border-t border-cream-dark">
-                              {cmd.statut === "brouillon" && (
-                                <>
-                                  <button
-                                    onClick={() => handleUpdateStatus(cmd.id, "commandee")}
-                                    className="flex-1 btn-primary py-2 text-xs"
-                                  >
-                                    Passer commande
-                                  </button>
-                                  <button
-                                    onClick={() => handleUpdateStatus(cmd.id, "annulee")}
-                                    className="flex-1 btn-secondary py-2 text-xs text-red-500 border-red-100 hover:bg-red-50"
-                                  >
-                                    Annuler
-                                  </button>
-                                </>
-                              )}
-                              {(cmd.statut === "commandee" || cmd.statut === "recu") && (
-                                <>
-                                  {cmd.statut === "commandee" && (
-                                    <button
-                                      onClick={() => handleReception(cmd)}
-                                      className="flex-1 btn-primary py-2 text-xs bg-green-600 hover:bg-green-700 border-green-700"
-                                    >
-                                      Réceptionner
-                                    </button>
-                                  )}
-                                  {cmd.totalTTC - (cmd.montantPaye || 0) > 0 && (
-                                    <button
-                                      onClick={() => handlePaiement(cmd)}
-                                      className="flex-1 btn-secondary py-2 text-xs font-bold text-ink hover:bg-cream"
-                                    >
-                                      Enregistrer Paiement
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => handleUpdateStatus(cmd.id, "annulee")}
-                                    className="flex-1 btn-secondary py-2 text-xs"
-                                  >
-                                    Annuler
-                                  </button>
-                                </>
-                              )}
-                              {cmd.statut === "recu" && cmd.totalTTC - (cmd.montantPaye || 0) <= 0 && (
-                                <div className="w-full text-center text-[10px] text-green-600 font-bold bg-green-50 py-1 rounded">
-                                  STOCK MIS À JOUR LE {format(cmd.updatedAt, "dd/MM/yyyy")}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                      {commandes.length === 0 && (
-                        <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-cream-dark">
-                          <Truck size={40} className="mx-auto mb-3 opacity-10" />
-                          <p className="text-ink-muted italic">Aucune commande pour ce fournisseur</p>
-                        </div>
-                      )}
+                        ))}
+                        {commandes.length === 0 && (
+                          <div className="text-center py-20 bg-white rounded-3xl border-2 border-dashed border-cream-dark">
+                            <Truck size={40} className="mx-auto mb-3 opacity-10" />
+                            <p className="text-ink-muted italic">Aucune commande pour ce fournisseur</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-ink-muted/30">
+                <Truck size={80} className="mb-4 animate-pulse" />
+                <p className="text-lg font-display font-medium">Sélectionnez un partenaire logistique</p>
+                <p className="text-sm">pour voir l'historique des approvisionnements</p>
               </div>
-            </>
-          ) : (
-            <div className="h-full flex flex-col items-center justify-center text-ink-muted/30">
-              <Truck size={80} className="mb-4 animate-pulse" />
-              <p className="text-lg font-display font-medium">Sélectionnez un partenaire logistique</p>
-              <p className="text-sm">pour voir l'historique des approvisionnements</p>
-            </div>
-          )
-          }
-        </div >
-      </div >
+            )
+            }
+          </div>
+        </div>
+      </div>
 
       {/* Modals */}
       {

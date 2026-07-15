@@ -75,8 +75,8 @@ export default function POSPage() {
     };
 
     const filteredProduits = produits.filter(p =>
-        p.designation.toLowerCase().includes(search.toLowerCase()) ||
-        p.reference.toLowerCase().includes(search.toLowerCase())
+        (p.designation?.toLowerCase() || "").includes(search.toLowerCase()) ||
+        (p.reference?.toLowerCase() || "").includes(search.toLowerCase())
     );
 
     const addToCart = (p: Produit) => {
@@ -140,6 +140,24 @@ export default function POSPage() {
                     toast.error("Stock insuffisant");
                     return item;
                 }
+                return { ...item, quantite: newQty, total: newQty * item.prixUnitaire };
+            }
+            return item;
+        }));
+    };
+
+    const handleQtyChange = (id: string, value: string) => {
+        const newQty = parseInt(value);
+        if (isNaN(newQty) || newQty < 0) return;
+
+        setCart(prev => prev.map(item => {
+            if (item.produitId === id) {
+                const prod = produits.find(p => p.id === id);
+                if (prod && newQty > prod.stockActuel) {
+                    toast.error("Stock insuffisant");
+                    return { ...item, quantite: prod.stockActuel, total: prod.stockActuel * item.prixUnitaire };
+                }
+                if (newQty === 0) return item; // Optionally remove or keep as 1
                 return { ...item, quantite: newQty, total: newQty * item.prixUnitaire };
             }
             return item;
@@ -381,7 +399,12 @@ export default function POSPage() {
                                                 className="p-2 rounded-lg bg-white shadow-sm ring-1 ring-black/5 hover:bg-gold/10 text-gold transition-colors">
                                                 <Minus size={14} />
                                             </button>
-                                            <span className="text-base font-bold font-mono w-8 text-center text-ink">{item.quantite}</span>
+                                            <input
+                                                type="number"
+                                                value={item.quantite}
+                                                onChange={(e) => handleQtyChange(item.produitId, e.target.value)}
+                                                className="text-base font-bold font-mono w-10 text-center text-ink bg-transparent focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                            />
                                             <button onClick={() => updateQty(item.produitId, 1)}
                                                 className="p-2 rounded-lg bg-white shadow-sm ring-1 ring-black/5 hover:bg-gold/10 text-gold transition-colors">
                                                 <Plus size={14} />

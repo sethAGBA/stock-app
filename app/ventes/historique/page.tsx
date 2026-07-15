@@ -5,7 +5,7 @@ import { ventesService, etablissementService, utilisateursService } from "@/lib/
 import type { Vente, Etablissement, AppUser } from "@/types";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
-import { Printer, ArrowLeft, Search, User, Download, ChevronDown, RotateCcw } from "lucide-react";
+import { Printer, ArrowLeft, Search, User, Download, ChevronDown, RotateCcw, X } from "lucide-react";
 import { exportToCSV, exportToExcel } from "@/lib/export";
 import Link from "next/link";
 import { ReceiptModal } from "@/components/common/ReceiptModal";
@@ -29,18 +29,30 @@ export default function HistoriqueVentesPage() {
     const [venteToCancel, setVenteToCancel] = useState<Vente | null>(null);
     const [venteToReturn, setVenteToReturn] = useState<Vente | null>(null);
 
+    // Filtres de date
+    const [dateDebut, setDateDebut] = useState<string>("");
+    const [dateFin, setDateFin] = useState<string>("");
+
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
 
     useEffect(() => {
         if (!appUser) return;
         if (appUser.role !== "admin" && !currentMagasinId) return;
 
-        ventesService.getRecent(100, currentMagasinId).then(setVentes);
+        if (dateDebut && dateFin) {
+            const start = new Date(dateDebut);
+            const end = new Date(dateFin);
+            end.setHours(23, 59, 59);
+            ventesService.getForDateRange(start, end, undefined, currentMagasinId).then(setVentes);
+        } else {
+            ventesService.getRecent(100, currentMagasinId).then(setVentes);
+        }
+
         etablissementService.get().then(setEtablissement);
         if (isGestionnaire) {
             utilisateursService.getAll(currentMagasinId).then(setVendeurs);
         }
-    }, [isGestionnaire, currentMagasinId, appUser]);
+    }, [isGestionnaire, currentMagasinId, appUser, dateDebut, dateFin]);
 
     const filteredVentes = ventes.filter(v => {
         const matchesSearch = v.id.includes(search) ||
@@ -101,16 +113,31 @@ export default function HistoriqueVentesPage() {
         try {
             await ventesService.annuler(venteToCancel, motif, { uid: appUser.uid, nom: `${appUser.prenom} ${appUser.nom}` });
             toast.success("Vente annulée avec succès");
-            // Rafraîchir la liste
-            const updated = await ventesService.getRecent(100, currentMagasinId);
-            setVentes(updated);
+            // Rafraîchir la liste en respectant les filtres de date
+            if (dateDebut && dateFin) {
+                const start = new Date(dateDebut);
+                const end = new Date(dateFin);
+                end.setHours(23, 59, 59);
+                const updated = await ventesService.getForDateRange(start, end, undefined, currentMagasinId);
+                setVentes(updated);
+            } else {
+                const updated = await ventesService.getRecent(100, currentMagasinId);
+                setVentes(updated);
+            }
         } catch (err: any) {
             toast.error(err.message || "Erreur lors de l'annulation");
         }
     };
 
     const handleRetourSuccess = () => {
-        ventesService.getRecent(100, currentMagasinId).then(setVentes);
+        if (dateDebut && dateFin) {
+            const start = new Date(dateDebut);
+            const end = new Date(dateFin);
+            end.setHours(23, 59, 59);
+            ventesService.getForDateRange(start, end, undefined, currentMagasinId).then(setVentes);
+        } else {
+            ventesService.getRecent(100, currentMagasinId).then(setVentes);
+        }
     };
 
     return (
@@ -123,7 +150,38 @@ export default function HistoriqueVentesPage() {
                         </Link>
                         <h2 className="font-display text-3xl font-semibold text-ink">Historique des Ventes</h2>
                     </div>
-                    <div className="flex gap-4">
+                    <div className="flex gap-4 items-end">
+                        {/* Filtre Date */}
+                        <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm">
+                            <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Du</span>
+                                <input
+                                    type="date"
+                                    value={dateDebut}
+                                    onChange={e => setDateDebut(e.target.value)}
+                                    className="bg-transparent text-xs font-bold focus:outline-none"
+                                />
+                            </div>
+                            <div className="w-px h-6 bg-cream-dark mx-1" />
+                            <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Au</span>
+                                <input
+                                    type="date"
+                                    value={dateFin}
+                                    onChange={e => setDateFin(e.target.value)}
+                                    className="bg-transparent text-xs font-bold focus:outline-none"
+                                />
+                            </div>
+                            {(dateDebut || dateFin) && (
+                                <button
+                                    onClick={() => { setDateDebut(""); setDateFin(""); }}
+                                    className="p-1 hover:bg-red-50 text-red-500 rounded-md transition-colors"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+
                         {isGestionnaire && (
                             <div className="relative">
                                 <button

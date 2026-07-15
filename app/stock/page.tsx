@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { mouvementsService, produitsService } from "@/lib/db";
+import { mouvementsService, produitsService, utilisateursService } from "@/lib/db";
 import { useAuth } from "@/lib/auth-context";
-import type { Mouvement, Produit, TypeMouvement } from "@/types";
-import { ArrowUpCircle, ArrowDownCircle, RefreshCw, X, Download } from "lucide-react";
+import type { Mouvement, Produit, TypeMouvement, AppUser } from "@/types";
+import { ArrowUpCircle, ArrowDownCircle, RefreshCw, X, Download, User } from "lucide-react";
 import { exportToCSV } from "@/lib/export-utils";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -19,6 +19,13 @@ export default function StockPage() {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [filtre, setFiltre] = useState<"tous" | TypeMouvement>("tous");
+  const [filtreUtilisateur, setFiltreUtilisateur] = useState<string>("tous");
+  const [users, setUsers] = useState<AppUser[]>([]);
+
+  // Filtres de date
+  const [dateDebut, setDateDebut] = useState<string>("");
+  const [dateFin, setDateFin] = useState<string>("");
+  const [isFiltered, setIsFiltered] = useState(false);
 
   const [form, setForm] = useState({
     produitId: "", type: "entree" as TypeMouvement,
@@ -29,12 +36,30 @@ export default function StockPage() {
     if (!appUser) return;
     if (appUser.role !== "admin" && !currentMagasinId) return;
 
-    const unsubM = mouvementsService.onSnapshot(setMouvements, currentMagasinId);
-    const unsubP = produitsService.onSnapshot(setProduits, currentMagasinId);
-    return () => { unsubM(); unsubP(); };
-  }, [appUser, currentMagasinId]);
+    // Si on a un filtre de date, on utilise getByPeriode (non temps-réel)
+    if (dateDebut && dateFin) {
+      setIsFiltered(true);
+      const start = new Date(dateDebut);
+      const end = new Date(dateFin);
+      end.setHours(23, 59, 59);
 
-  const filtered = mouvements.filter(m => filtre === "tous" || m.type === filtre);
+      mouvementsService.getByPeriode(start, end, currentMagasinId).then(setMouvements);
+      const unsubP = produitsService.onSnapshot(setProduits, currentMagasinId);
+      utilisateursService.getAll(currentMagasinId).then(setUsers);
+      return () => unsubP();
+    } else {
+      setIsFiltered(false);
+      const unsubM = mouvementsService.onSnapshot(setMouvements, currentMagasinId);
+      const unsubP = produitsService.onSnapshot(setProduits, currentMagasinId);
+      utilisateursService.getAll(currentMagasinId).then(setUsers);
+      return () => { unsubM(); unsubP(); };
+    }
+  }, [appUser, currentMagasinId, dateDebut, dateFin]);
+
+  const filtered = mouvements.filter(m =>
+    (filtre === "tous" || m.type === filtre) &&
+    (filtreUtilisateur === "tous" || m.utilisateurId === filtreUtilisateur)
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,33 +106,91 @@ export default function StockPage() {
             <p className="text-[10px] font-mono tracking-widest text-ink-muted uppercase mb-1">Stock</p>
             <h2 className="font-display text-3xl font-semibold text-ink">Mouvements</h2>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleExport}
-              className="btn-secondary flex items-center gap-2"
-              title="Exporter en CSV"
-            >
-              <Download size={18} />
-              <span className="hidden md:inline">Exporter</span>
-            </button>
-            {(appUser?.role === "admin" || appUser?.role === "gestionnaire") && (
-              <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-                <RefreshCw size={14} /> Nouveau mouvement
+          <div className="flex flex-col md:flex-row gap-2 items-end">
+            <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm">
+              <div className="flex flex-col">
+                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Du</span>
+                <input
+                  type="date"
+                  value={dateDebut}
+                  onChange={e => setDateDebut(e.target.value)}
+                  className="bg-transparent text-xs font-bold focus:outline-none"
+                />
+              </div>
+              <div className="w-px h-6 bg-cream-dark mx-1" />
+              <div className="flex flex-col">
+                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Au</span>
+                <input
+                  type="date"
+                  value={dateFin}
+                  onChange={e => setDateFin(e.target.value)}
+                  className="bg-transparent text-xs font-bold focus:outline-none"
+                />
+              </div>
+              {(dateDebut || dateFin) && (
+                <button
+                  onClick={() => { setDateDebut(""); setDateFin(""); }}
+                  className="p-1 hover:bg-red-50 text-red-500 rounded-md transition-colors"
+                  title="Réinitialiser"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm">
+              <div className="flex items-center gap-2">
+                <User size={14} className="text-ink-muted" />
+                <select
+                  value={filtreUtilisateur}
+                  onChange={e => setFiltreUtilisateur(e.target.value)}
+                  className="bg-transparent text-xs font-bold focus:outline-none min-w-[120px] appearance-none cursor-pointer"
+                >
+                  <option value="tous">Tous les opérateurs</option>
+                  {users.map(u => (
+                    <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleExport}
+                className="btn-secondary flex items-center gap-2"
+                title="Exporter en CSV"
+              >
+                <Download size={18} />
+                <span className="hidden md:inline">Exporter</span>
               </button>
-            )}
+              {(appUser?.role === "admin" || appUser?.role === "gestionnaire") && (
+                <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+                  <RefreshCw size={14} /> Nouveau mouvement
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Filtres */}
-        <div className="flex gap-2 flex-wrap">
-          {(["tous", "entree", "sortie", "usage_interne", "ajustement"] as const).map(f => (
-            <button key={f} onClick={() => setFiltre(f)}
-              className={clsx("px-4 py-1.5 rounded-full text-xs font-medium transition-all capitalize",
-                filtre === f ? "bg-gold text-white" : "bg-white text-ink-muted border border-cream-dark hover:border-gold"
-              )}>
-              {f === "tous" ? "Tous" : f === "entree" ? "Entrées" : f === "sortie" ? "Sorties" : f === "usage_interne" ? "Usages Internes" : "Ajustements"}
-            </button>
-          ))}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex gap-2 flex-wrap">
+            {(["tous", "entree", "sortie", "usage_interne", "ajustement"] as const).map(f => (
+              <button key={f} onClick={() => setFiltre(f)}
+                className={clsx("px-4 py-1.5 rounded-full text-xs font-medium transition-all capitalize",
+                  filtre === f ? "bg-gold text-white" : "bg-white text-ink-muted border border-cream-dark hover:border-gold"
+                )}>
+                {f === "tous" ? "Tous" : f === "entree" ? "Entrées" : f === "sortie" ? "Sorties" : f === "usage_interne" ? "Usages Internes" : "Ajustements"}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 px-3 py-1 bg-cream/30 rounded-lg border border-cream-dark">
+            <div className={clsx("w-2 h-2 rounded-full", isFiltered ? "bg-amber-400" : "bg-green-500 animate-pulse")} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+              {isFiltered ? "Mode Archive (Filtré)" : "Mode Temps Réel (100 derniers)"}
+            </span>
+          </div>
         </div>
 
         {/* Table */}
@@ -115,14 +198,14 @@ export default function StockPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cream-dark bg-cream">
-                <th className="text-left px-4 py-3 label">Type</th>
-                <th className="text-left px-4 py-3 label">Produit</th>
-                <th className="text-right px-4 py-3 label">Quantité</th>
-                <th className="text-right px-4 py-3 label">Stock avant</th>
-                <th className="text-right px-4 py-3 label">Stock après</th>
-                <th className="text-left px-4 py-3 label">Motif</th>
-                <th className="text-left px-4 py-3 label">Utilisateur</th>
-                <th className="text-right px-4 py-3 label">Date</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Action</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Article</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Quantité</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Stock Initial</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Stock Final</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Motif / Commentaire</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Opérateur</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Date & Heure</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-cream-dark">

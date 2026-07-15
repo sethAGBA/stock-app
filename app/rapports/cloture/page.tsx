@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
 import { ventesService, cloturesService, utilisateursService, sortiesCaisseService } from "@/lib/db";
 import type { Vente, ClotureCaisse, AppUser, SortieCaisse } from "@/types";
-import { Save, Wallet, Calculator, AlertTriangle, CheckCircle2, History, ChevronRight, User } from "lucide-react";
+import { Save, Wallet, Calculator, AlertTriangle, CheckCircle2, History, ChevronRight, User, Search, X } from "lucide-react";
 import { format, startOfDay, endOfDay } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
@@ -24,6 +24,12 @@ export default function CashClosurePage() {
     const [selectedSellerId, setSelectedSellerId] = useState<string>("");
     const [sorties, setSorties] = useState<SortieCaisse[]>([]);
 
+    // Filtres pour l'historique
+    const [dateDebut, setDateDebut] = useState("");
+    const [dateFin, setDateFin] = useState("");
+    const [filtreUtilisateur, setFiltreUtilisateur] = useState("all");
+    const [searchTerm, setSearchTerm] = useState("");
+
     const isGestionnaire = appUser?.role === "admin" || appUser?.role === "gestionnaire";
 
     useEffect(() => {
@@ -35,16 +41,28 @@ export default function CashClosurePage() {
             setSelectedSellerId(appUser.uid);
         }
 
-        const start = startOfDay(new Date());
-        const end = endOfDay(new Date());
+        const startToday = startOfDay(new Date());
+        const endToday = endOfDay(new Date());
 
         setLoading(true);
-        Promise.all([
-            ventesService.getForDateRange(start, end, selectedSellerId || appUser.uid, currentMagasinId),
-            cloturesService.getAll(isGestionnaire ? undefined : appUser.uid, currentMagasinId),
-            isGestionnaire ? utilisateursService.getAll(currentMagasinId) : Promise.resolve([]),
-            sortiesCaisseService.getForDateRange(start, end, currentMagasinId)
-        ]).then(([sales, closures, users, withdrawals]) => {
+
+        const promises: Promise<any>[] = [
+            ventesService.getForDateRange(startToday, endToday, selectedSellerId || appUser.uid, currentMagasinId || undefined),
+            isGestionnaire ? utilisateursService.getAll(currentMagasinId || undefined) : Promise.resolve([]),
+            sortiesCaisseService.getForDateRange(startToday, endToday, currentMagasinId || undefined)
+        ];
+
+        // Fetch history based on filters or default
+        if (dateDebut && dateFin) {
+            const startHistory = new Date(dateDebut);
+            const endHistory = new Date(dateFin);
+            endHistory.setHours(23, 59, 59);
+            promises.push(cloturesService.getForDateRange(startHistory, endHistory, filtreUtilisateur, currentMagasinId || undefined));
+        } else {
+            promises.push(cloturesService.getAll(isGestionnaire ? undefined : appUser.uid, currentMagasinId || undefined));
+        }
+
+        Promise.all(promises).then(([sales, users, withdrawals, closures]) => {
             setTodaySales(sales);
             setHistory(closures);
             if (users.length > 0) setVendeurs(users);
@@ -57,7 +75,15 @@ export default function CashClosurePage() {
                 .reduce((acc: number, v: Vente) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0);
             setMontantReel(especes);
         });
-    }, [appUser, selectedSellerId, isGestionnaire, currentMagasinId]);
+    }, [appUser, selectedSellerId, isGestionnaire, currentMagasinId, dateDebut, dateFin, filtreUtilisateur]);
+
+    const filteredHistory = history.filter(c => {
+        const matchesSearch = searchTerm === "" ||
+            (c.vendeurNom || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (c.utilisateurNom || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+            (c.note || "").toLowerCase().includes(searchTerm.toLowerCase());
+        return matchesSearch;
+    });
 
     const totals = {
         especes: todaySales.filter((v: Vente) => v.modePaiement === "especes").reduce((acc: number, v: Vente) => acc + (v.montantRecu || 0) - (v.monnaie || 0), 0),
@@ -269,9 +295,73 @@ export default function CashClosurePage() {
                     </div>
                 ) : (
                     /* History Tab */
-                    <div className="space-y-4">
+                    <div className="space-y-6">
+                        {/* Action Bar (Filters) */}
+                        <div className="card bg-white p-4 border-cream-dark shadow-sm flex flex-col gap-4">
+                            <div className="flex flex-col md:flex-row gap-4 items-end">
+                                {/* Search */}
+                                <div className="relative flex-1 w-full">
+                                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                                    <input
+                                        value={searchTerm}
+                                        onChange={e => setSearchTerm(e.target.value)}
+                                        placeholder="Rechercher par vendeur, note..."
+                                        className="input pl-9 w-full bg-cream/20 border-none"
+                                    />
+                                </div>
+
+                                {/* Date Filter */}
+                                <div className="flex gap-2 items-center bg-cream/20 px-3 py-1.5 rounded-xl border-none w-full md:w-auto self-stretch">
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] uppercase font-black text-ink-muted px-1">Du</span>
+                                        <input
+                                            type="date"
+                                            value={dateDebut}
+                                            onChange={e => setDateDebut(e.target.value)}
+                                            className="bg-transparent text-[10px] font-bold focus:outline-none"
+                                        />
+                                    </div>
+                                    <div className="w-px h-5 bg-cream-dark mx-1" />
+                                    <div className="flex flex-col">
+                                        <span className="text-[8px] uppercase font-black text-ink-muted px-1">Au</span>
+                                        <input
+                                            type="date"
+                                            value={dateFin}
+                                            onChange={e => setDateFin(e.target.value)}
+                                            className="bg-transparent text-[10px] font-bold focus:outline-none"
+                                        />
+                                    </div>
+                                    {(dateDebut || dateFin) && (
+                                        <button
+                                            onClick={() => { setDateDebut(""); setDateFin(""); }}
+                                            className="p-1 hover:bg-white text-red-500 rounded-md transition-colors"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {/* User Filter */}
+                                <div className="relative">
+                                    <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                                    <select
+                                        value={filtreUtilisateur}
+                                        onChange={e => setFiltreUtilisateur(e.target.value)}
+                                        className="bg-cream/20 text-[10px] font-bold py-1.5 pl-8 pr-6 rounded-lg appearance-none cursor-pointer border-none focus:ring-1 focus:ring-gold"
+                                    >
+                                        <option value="all">Tous les utilisateurs</option>
+                                        {vendeurs.map(u => (
+                                            <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {history.map(c => (
+                            {filteredHistory.map(c => (
                                 <div key={c.id} className="card hover:border-gold transition-all relative overflow-hidden group">
                                     {c.ecart !== 0 && (
                                         <div className={clsx(

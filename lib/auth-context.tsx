@@ -2,8 +2,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import { utilisateursService, magasinsService } from "@/lib/db";
-import type { AppUser, Magasin } from "@/types";
+import { utilisateursService, magasinsService, etablissementService } from "@/lib/db";
+import type { AppUser, Magasin, Etablissement } from "@/types";
 
 interface AuthContextType {
   user: User | null;
@@ -15,6 +15,8 @@ interface AuthContextType {
   setMagasinById: (id: string | null) => void;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  isExpired: boolean;
+  licenseDaysLeft: number;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -25,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [magasins, setMagasins] = useState<Magasin[]>([]);
   const [manualMagasinId, setManualMagasinId] = useState<string | null>(null);
+  const [etablissement, setEtablissement] = useState<Etablissement | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -41,6 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profile?.magasinId) {
           setManualMagasinId(profile.magasinId);
         }
+
+        // Load license info
+        const config = await etablissementService.get();
+        setEtablissement(config);
 
         // Set cookie for middleware
         const token = await u.getIdToken();
@@ -70,11 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const currentMagasinId = manualMagasinId;
   const currentMagasin = magasins.find(m => m.id === currentMagasinId) || null;
 
+  const isExpired = etablissement ? new Date() > etablissement.licenseExpiryDate : false;
+  const licenseDaysLeft = etablissement 
+    ? Math.ceil((etablissement.licenseExpiryDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
   return (
     <AuthContext.Provider value={{
       user, appUser, loading,
       currentMagasinId, currentMagasin, magasins,
-      setMagasinById, login, logout
+      setMagasinById, login, logout,
+      isExpired, licenseDaysLeft
     }}>
       {children}
     </AuthContext.Provider>

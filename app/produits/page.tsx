@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { produitsService, categoriesService, fournisseursService, unitesService } from "@/lib/db";
-import type { Produit, Categorie, Fournisseur, Unite } from "@/types";
-import { Plus, Search, Edit2, Trash2, AlertTriangle, X, Camera, Tag, Download, ChevronDown } from "lucide-react";
+import { produitsService, categoriesService, fournisseursService, unitesService, utilisateursService } from "@/lib/db";
+import type { Produit, Categorie, Fournisseur, Unite, AppUser } from "@/types";
+import { Plus, Search, Edit2, Trash2, AlertTriangle, X, Camera, Tag, Download, ChevronDown, User } from "lucide-react";
 import { exportToCSV, exportToExcel } from "@/lib/export";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
@@ -15,7 +15,7 @@ import { formatPrice, formatCurrency } from "@/lib/format";
 const Scanner = dynamic(() => import("@/components/common/Scanner"), { ssr: false });
 
 export default function ProduitsPage() {
-  const { appUser, currentMagasinId } = useAuth();
+  const { appUser, currentMagasinId, magasins } = useAuth();
   const [produits, setProduits] = useState<Produit[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
   const [fournisseurs, setFournisseurs] = useState<Fournisseur[]>([]);
@@ -28,9 +28,16 @@ export default function ProduitsPage() {
   const [scannerTarget, setScannerTarget] = useState<"search" | "form">("search");
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
+  // Filtres
+  const [dateDebut, setDateDebut] = useState("");
+  const [dateFin, setDateFin] = useState("");
+  const [filtreUtilisateur, setFiltreUtilisateur] = useState("tous");
+  const [users, setUsers] = useState<AppUser[]>([]);
+
   const [form, setForm] = useState({
     reference: "", designation: "", description: "",
     categorieId: "", fournisseurId: "", unite: "pièce",
+    magasinId: "",
     prixAchat: 0, prixVente: 0, prixVenteGros: 0,
     stockMinimum: 5, marque: "", emplacement: "",
     datePeremption: "",
@@ -49,6 +56,7 @@ export default function ProduitsPage() {
     categoriesService.getAll().then(setCategories);
     fournisseursService.getAll().then(setFournisseurs);
     unitesService.getAll().then(setUnites);
+    utilisateursService.getAll(currentMagasinId).then(setUsers);
     return unsub;
   }, [appUser, currentMagasinId]);
 
@@ -72,10 +80,23 @@ export default function ProduitsPage() {
     toast.success("Référence générée");
   };
 
-  const filtered = produits.filter(p =>
-    p.designation.toLowerCase().includes(search.toLowerCase()) ||
-    p.reference.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = produits.filter(p => {
+    const matchSearch = p.designation.toLowerCase().includes(search.toLowerCase()) ||
+      p.reference.toLowerCase().includes(search.toLowerCase());
+
+    const matchUser = filtreUtilisateur === "tous" || p.utilisateurId === filtreUtilisateur;
+
+    let matchDate = true;
+    if (dateDebut && dateFin) {
+      const start = new Date(dateDebut);
+      const end = new Date(dateFin);
+      end.setHours(23, 59, 59);
+      const created = new Date(p.createdAt);
+      matchDate = created >= start && created <= end;
+    }
+
+    return matchSearch && matchUser && matchDate;
+  });
 
   const openCreate = () => {
     const timestamp = Date.now().toString(36).toUpperCase();
@@ -87,6 +108,7 @@ export default function ProduitsPage() {
       reference: newRef,
       designation: "", description: "",
       categorieId: "", fournisseurId: "", unite: "pièce",
+      magasinId: currentMagasinId || "",
       prixAchat: 0, prixVente: 0, prixVenteGros: 0,
       stockMinimum: 5, marque: "", emplacement: "",
       datePeremption: ""
@@ -105,6 +127,7 @@ export default function ProduitsPage() {
       reference: p.reference, designation: p.designation,
       description: p.description || "", categorieId: p.categorieId,
       fournisseurId: p.fournisseurId, unite: p.unite,
+      magasinId: p.magasinId || currentMagasinId || "",
       prixAchat: p.prixAchat, prixVente: p.prixVente,
       prixVenteGros: p.prixVenteGros || 0,
       stockMinimum: p.stockMinimum,
@@ -117,7 +140,7 @@ export default function ProduitsPage() {
 
   const handleExport = (exportFormat: "csv" | "excel") => {
     setIsExportMenuOpen(false);
-    const dataToExport = produits.map(p => ({
+    const dataToExport = filtered.map(p => ({
       Reference: p.reference,
       Designation: p.designation,
       Categorie: p.categorie || "",
@@ -148,13 +171,14 @@ export default function ProduitsPage() {
         ...form,
         categorie: cat?.nom || "",
         fournisseur: four?.nom || "",
-        datePeremption: form.datePeremption ? new Date(form.datePeremption) : null
+        datePeremption: form.datePeremption ? new Date(form.datePeremption) : null,
+        magasinId: form.magasinId || currentMagasinId || null
       };
       if (editing) {
         await produitsService.update(editing.id, data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
         toast.success("Produit modifié");
       } else {
-        await produitsService.create(data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` }, currentMagasinId);
+        await produitsService.create(data as any, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` }, form.magasinId || currentMagasinId);
         toast.success("Produit créé");
       }
       setShowModal(false);
@@ -226,21 +250,73 @@ export default function ProduitsPage() {
           </div>
         </div>
 
-        {/* Search & Actions */}
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
-              <input value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Rechercher par référence ou nom..." className="input pl-9" />
+        {/* Search & Filters */}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-4 items-end">
+            <div className="relative flex-1 flex gap-2 w-full">
+              <div className="relative flex-1">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Rechercher par référence ou nom..." className="input pl-9" />
+              </div>
+              <button
+                onClick={() => { setScannerTarget("search"); setShowScanner(true); }}
+                className="p-3 bg-gold/10 text-gold rounded-xl hover:bg-gold/20 transition-colors"
+                title="Scanner un code-barres"
+              >
+                <Camera size={18} />
+              </button>
             </div>
-            <button
-              onClick={() => { setScannerTarget("search"); setShowScanner(true); }}
-              className="p-3 bg-gold/10 text-gold rounded-xl hover:bg-gold/20 transition-colors"
-              title="Scanner un code-barres"
-            >
-              <Camera size={18} />
-            </button>
+
+            <div className="flex flex-col md:flex-row gap-2 items-end w-full md:w-auto">
+              {/* Filtre Date */}
+              <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm w-full md:w-auto">
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-black text-ink-muted px-1">Du</span>
+                  <input
+                    type="date"
+                    value={dateDebut}
+                    onChange={e => setDateDebut(e.target.value)}
+                    className="bg-transparent text-xs font-bold focus:outline-none"
+                  />
+                </div>
+                <div className="w-px h-6 bg-cream-dark mx-1" />
+                <div className="flex flex-col">
+                  <span className="text-[9px] uppercase font-black text-ink-muted px-1">Au</span>
+                  <input
+                    type="date"
+                    value={dateFin}
+                    onChange={e => setDateFin(e.target.value)}
+                    className="bg-transparent text-xs font-bold focus:outline-none"
+                  />
+                </div>
+                {(dateDebut || dateFin) && (
+                  <button
+                    onClick={() => { setDateDebut(""); setDateFin(""); }}
+                    className="p-1 hover:bg-red-50 text-red-500 rounded-md transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {/* Filtre Utilisateur */}
+              <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm w-full md:w-auto">
+                <div className="flex items-center gap-2">
+                  <User size={14} className="text-ink-muted" />
+                  <select
+                    value={filtreUtilisateur}
+                    onChange={e => setFiltreUtilisateur(e.target.value)}
+                    className="bg-transparent text-xs font-bold focus:outline-none min-w-[120px] appearance-none cursor-pointer"
+                  >
+                    <option value="tous">Tous les auteurs</option>
+                    {users.map(u => (
+                      <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -253,12 +329,12 @@ export default function ProduitsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cream-dark bg-cream">
-                <th className="text-left px-4 py-3 label">Référence</th>
-                <th className="text-left px-4 py-3 label">Désignation</th>
-                <th className="text-left px-4 py-3 label">Catégorie</th>
-                <th className="text-right px-4 py-3 label">Stock actuel</th>
-                <th className="text-right px-4 py-3 label">Prix achat</th>
-                <th className="text-right px-4 py-3 label">Statut</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Référence</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Désignation</th>
+                <th className="text-left px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Catégorie</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Stock actuel</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Prix de Vente</th>
+                <th className="text-right px-4 py-3 text-xs font-mono uppercase tracking-wider text-ink-muted whitespace-nowrap">Statut</th>
                 {(isGestionnaire || isAdmin) && <th className="px-4 py-3"></th>}
               </tr>
             </thead>
@@ -379,6 +455,16 @@ export default function ProduitsPage() {
                     <option value="">Sélectionner...</option>
                     {fournisseurs.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
                   </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="label">Magasin (affectation)</label>
+                  <select value={form.magasinId} onChange={e => setForm(f => ({ ...f, magasinId: e.target.value }))} className="input">
+                    <option value="">Aucun (Global)</option>
+                    {magasins.map(m => <option key={m.id} value={m.id}>{m.nom}</option>)}
+                  </select>
+                  <p className="text-[9px] text-ink-muted italic px-1 mt-1">Laisser vide pour rendre cet article disponible globalement.</p>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

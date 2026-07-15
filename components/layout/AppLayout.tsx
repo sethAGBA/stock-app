@@ -8,7 +8,7 @@ import LogoutModal from "./LogoutModal";
 import { useState, useEffect } from "react";
 import {
   LayoutDashboard, Package, ArrowLeftRight, Users,
-  Truck, FileBarChart, LogOut, Bell, ChevronRight, ShoppingCart, Save, Settings, Receipt, Store, RotateCcw
+  Truck, FileBarChart, LogOut, Bell, ChevronRight, ShoppingCart, Save, Settings, Receipt, Store, RotateCcw, ShieldCheck
 } from "lucide-react";
 import clsx from "clsx";
 
@@ -27,6 +27,7 @@ const NAV = [
   { href: "/admin/logs", label: "Audit Logs", icon: FileBarChart, adminOnly: true },
   { href: "/utilisateurs", label: "Utilisateurs", icon: Users, adminOnly: true },
   { href: "/admin/magasins", label: "Magasins", icon: Store, adminOnly: true },
+  { href: "/admin/licence", label: "Gestion Licence", icon: ShieldCheck, superAdminOnly: true },
   { href: "/configuration", label: "Configuration", icon: Settings, adminOnly: true },
 ];
 
@@ -55,6 +56,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = NAV.filter(n => {
     if (!appUser) return false;
     const role = appUser.role;
+
+    // Super Admin check for specific pages
+    if (n.superAdminOnly && !appUser.isSuperAdmin) return false;
 
     // Admin has access to everything
     if (role === "admin") return true;

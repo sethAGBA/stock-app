@@ -1,9 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { sortiesCaisseService } from "@/lib/db";
-import type { SortieCaisse } from "@/types";
-import { Receipt, Plus, History, Calendar, User, Wallet } from "lucide-react";
+import { sortiesCaisseService, utilisateursService } from "@/lib/db";
+import type { SortieCaisse, AppUser } from "@/types";
+import { Receipt, Plus, History, Calendar, User, Wallet, X } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import toast from "react-hot-toast";
@@ -17,6 +17,12 @@ export default function SortiesCaissePage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [showForm, setShowForm] = useState(false);
+
+    // Filtres
+    const [dateDebut, setDateDebut] = useState("");
+    const [dateFin, setDateFin] = useState("");
+    const [filtreUtilisateur, setFiltreUtilisateur] = useState("all");
+    const [users, setUsers] = useState<AppUser[]>([]);
 
     // Form state
     const [montant, setMontant] = useState("");
@@ -39,11 +45,23 @@ export default function SortiesCaissePage() {
         if (!appUser) return;
         if (appUser.role !== "admin" && !currentMagasinId) return;
 
-        sortiesCaisseService.getAll(currentMagasinId).then(data => {
-            setSorties(data);
-            setLoading(false);
-        });
-    }, [appUser, currentMagasinId]);
+        if (dateDebut && dateFin) {
+            const start = new Date(dateDebut);
+            const end = new Date(dateFin);
+            end.setHours(23, 59, 59);
+            sortiesCaisseService.getForDateRange(start, end, undefined, currentMagasinId).then(data => {
+                setSorties(data);
+                setLoading(false);
+            });
+        } else {
+            sortiesCaisseService.getAll(currentMagasinId).then(data => {
+                setSorties(data);
+                setLoading(false);
+            });
+        }
+
+        utilisateursService.getAll(currentMagasinId).then(setUsers);
+    }, [appUser, currentMagasinId, dateDebut, dateFin]);
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -66,8 +84,18 @@ export default function SortiesCaissePage() {
             setMotif("");
             setBeneficiaire("");
             setShowForm(false);
-            const updated = await sortiesCaisseService.getAll(currentMagasinId);
-            setSorties(updated);
+
+            // Rafraîchir
+            if (dateDebut && dateFin) {
+                const start = new Date(dateDebut);
+                const end = new Date(dateFin);
+                end.setHours(23, 59, 59);
+                const updated = await sortiesCaisseService.getForDateRange(start, end, undefined, currentMagasinId);
+                setSorties(updated);
+            } else {
+                const updated = await sortiesCaisseService.getAll(currentMagasinId);
+                setSorties(updated);
+            }
         } catch (err) {
             toast.error("Erreur lors de l'enregistrement");
         } finally {
@@ -75,23 +103,76 @@ export default function SortiesCaissePage() {
         }
     };
 
+    const filteredSorties = sorties.filter(s => {
+        const matchesUser = filtreUtilisateur === "all" || s.utilisateurId === filtreUtilisateur;
+        return matchesUser;
+    });
+
     if (loading) return <AppLayout><div className="flex items-center justify-center min-h-[400px]"><div className="w-8 h-8 border-4 border-gold border-t-transparent rounded-full animate-spin" /></div></AppLayout>;
 
     return (
         <AppLayout>
             <div className="space-y-6">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <p className="text-[10px] font-mono tracking-widest text-ink-muted uppercase mb-1">Finances & Comptabilité</p>
                         <h2 className="font-display text-3xl font-semibold text-ink">Sorties de Caisse</h2>
                     </div>
-                    <button
-                        onClick={() => setShowForm(!showForm)}
-                        className="btn-primary flex items-center gap-2"
-                    >
-                        <Plus size={18} />
-                        Nouvelle Sortie
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3">
+                        {/* Filtre Date */}
+                        <div className="flex gap-2 items-center bg-white px-3 py-1.5 rounded-xl border border-cream-dark shadow-sm">
+                            <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Du</span>
+                                <input
+                                    type="date"
+                                    value={dateDebut}
+                                    onChange={e => setDateDebut(e.target.value)}
+                                    className="bg-transparent text-xs font-bold focus:outline-none"
+                                />
+                            </div>
+                            <div className="w-px h-6 bg-cream-dark mx-1" />
+                            <div className="flex flex-col">
+                                <span className="text-[9px] uppercase font-black text-ink-muted px-1">Au</span>
+                                <input
+                                    type="date"
+                                    value={dateFin}
+                                    onChange={e => setDateFin(e.target.value)}
+                                    className="bg-transparent text-xs font-bold focus:outline-none"
+                                />
+                            </div>
+                            {(dateDebut || dateFin) && (
+                                <button
+                                    onClick={() => { setDateDebut(""); setDateFin(""); }}
+                                    className="p-1 hover:bg-red-50 text-red-500 rounded-md transition-colors"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Filtre Utilisateur */}
+                        <div className="relative">
+                            <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
+                            <select
+                                value={filtreUtilisateur}
+                                onChange={e => setFiltreUtilisateur(e.target.value)}
+                                className="bg-white border border-cream-dark shadow-sm text-xs font-bold py-2 pl-9 pr-6 rounded-xl appearance-none cursor-pointer focus:ring-1 focus:ring-gold outline-none"
+                            >
+                                <option value="all">Tous les auteurs</option>
+                                {users.map(u => (
+                                    <option key={u.uid} value={u.uid}>{u.prenom} {u.nom}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <button
+                            onClick={() => setShowForm(!showForm)}
+                            className="btn-primary flex items-center gap-2"
+                        >
+                            <Plus size={18} />
+                            Nouvelle Sortie
+                        </button>
+                    </div>
                 </div>
 
                 {showForm && (
@@ -180,7 +261,7 @@ export default function SortiesCaissePage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-cream-dark">
-                                {sorties.map(s => (
+                                {filteredSorties.map(s => (
                                     <tr key={s.id} className="hover:bg-cream/10 transition-colors">
                                         <td className="p-4">
                                             <div className="flex items-center gap-2">
@@ -208,7 +289,7 @@ export default function SortiesCaissePage() {
                                         </td>
                                     </tr>
                                 ))}
-                                {sorties.length === 0 && (
+                                {filteredSorties.length === 0 && (
                                     <tr>
                                         <td colSpan={5} className="p-12 text-center text-ink-muted italic">
                                             <div className="flex flex-col items-center gap-2">

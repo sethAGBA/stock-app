@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState } from "react";
 import AppLayout from "@/components/layout/AppLayout";
-import { categoriesService, unitesService, etablissementService } from "@/lib/db";
+import { categoriesService, unitesService, etablissementService, maintenanceService } from "@/lib/db";
 import type { Categorie, Unite } from "@/types";
-import { Plus, Edit2, Trash2, X, Settings, Ruler, Tag, Building2 } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Settings, Ruler, Tag, Building2, ShieldAlert, RotateCcw } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import toast from "react-hot-toast";
 import clsx from "clsx";
 
-type Tab = "categories" | "unites" | "etablissement";
+type Tab = "categories" | "unites" | "etablissement" | "maintenance";
 
 export default function ConfigurationPage() {
     const { appUser } = useAuth();
@@ -162,15 +162,29 @@ export default function ConfigurationPage() {
                     >
                         <Building2 size={16} /> Établissement
                     </button>
+                    {appUser?.role === "admin" && (
+                        <button
+                            onClick={() => setActiveTab("maintenance")}
+                            className={clsx(
+                                "pb-3 text-sm font-medium transition-colors flex items-center gap-2",
+                                activeTab === "maintenance" ? "text-red-500 border-b-2 border-red-500" : "text-ink-muted hover:text-ink"
+                            )}
+                        >
+                            <ShieldAlert size={16} /> Maintenance
+                        </button>
+                    )}
                 </div>
 
                 {/* Content */}
                 <div className="card min-h-[400px]">
                     <div className="flex justify-between items-center mb-6">
                         <h3 className="text-lg font-semibold">
-                            {activeTab === "categories" ? "Liste des catégories" : activeTab === "unites" ? "Liste des unités" : "Informations de l'établissement"}
+                            {activeTab === "categories" ? "Liste des catégories" :
+                                activeTab === "unites" ? "Liste des unités" :
+                                    activeTab === "maintenance" ? "Maintenance du système" :
+                                        "Informations de l'établissement"}
                         </h3>
-                        {isGestionnaire && activeTab !== "etablissement" && (
+                        {isGestionnaire && activeTab !== "etablissement" && activeTab !== "maintenance" && (
                             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
                                 <Plus size={15} /> Nouveau
                             </button>
@@ -192,6 +206,19 @@ export default function ConfigurationPage() {
                                 setLoading(false);
                             }
                         }} isGestionnaire={isGestionnaire} />
+                    ) : activeTab === "maintenance" ? (
+                        <ConfigurationMaintenance onReset={async () => {
+                            setLoading(true);
+                            try {
+                                await maintenanceService.reinitialiserDonnees({ uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+                                toast.success("Le système a été réinitialisé avec succès");
+                                window.location.reload();
+                            } catch (e) {
+                                toast.error("Erreur de réinitialisation");
+                            } finally {
+                                setLoading(false);
+                            }
+                        }} />
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm text-left">
@@ -356,5 +383,90 @@ function ConfigurationEtablissement({ etablissement, onSave, isGestionnaire }: {
                 </button>
             </div>
         </form>
+    );
+}
+
+function ConfigurationMaintenance({ onReset }: { onReset: () => void }) {
+    const [confirmText, setConfirmText] = useState("");
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    const handleReset = async () => {
+        if (confirmText !== "INITIALISER") {
+            toast.error("Veuillez saisir INITIALISER pour confirmer");
+            return;
+        }
+        setIsDeleting(true);
+        try {
+            await onReset();
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    return (
+        <div className="p-8 max-w-2xl mx-auto space-y-8">
+            <div className="bg-red-50 border border-red-100 rounded-2xl p-6 flex gap-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 shrink-0">
+                    <ShieldAlert size={24} />
+                </div>
+                <div>
+                    <h4 className="text-red-900 font-bold text-lg mb-2">Zone Danger : Réinitialisation Totale</h4>
+                    <p className="text-red-700 text-sm leading-relaxed">
+                        Cette action est **irréversible**. Elle supprimera définitivement :
+                    </p>
+                    <ul className="grid grid-cols-2 gap-x-4 gap-y-1 mt-3 text-xs text-red-600 font-medium">
+                        <li>• Tous les produits</li>
+                        <li>• Toutes les ventes</li>
+                        <li>• Toute la comptabilité</li>
+                        <li>• Tous les clients & fournisseurs</li>
+                        <li>• Tous les logs d'audit</li>
+                        <li>• Tous les mouvements de stock</li>
+                    </ul>
+                    <p className="mt-4 text-[11px] text-red-500 italic">
+                        * Vos comptes utilisateurs et la configuration de l'établissement seront conservés.
+                    </p>
+                </div>
+            </div>
+
+            <div className="card border-cream-dark p-6 space-y-4">
+                <p className="text-sm text-ink-muted text-center">
+                    Pour confirmer, veuillez saisir le mot-clé <span className="font-bold text-ink">INITIALISER</span> ci-dessous :
+                </p>
+
+                <div className="max-w-xs mx-auto space-y-4">
+                    <input
+                        type="text"
+                        value={confirmText}
+                        onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
+                        className="input text-center font-bold tracking-widest text-lg border-red-200 focus:border-red-500 focus:ring-red-500"
+                        placeholder="Tapez ici..."
+                    />
+
+                    <button
+                        onClick={handleReset}
+                        disabled={isDeleting || confirmText !== "INITIALISER"}
+                        className={clsx(
+                            "w-full py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg",
+                            confirmText === "INITIALISER"
+                                ? "bg-red-600 text-white hover:bg-red-700 shadow-red-200"
+                                : "bg-cream text-ink-muted cursor-not-allowed shadow-none"
+                        )}
+                    >
+                        {isDeleting ? (
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                            <>
+                                <RotateCcw size={20} />
+                                Réinitialiser toutes les données
+                            </>
+                        )}
+                    </button>
+                </div>
+            </div>
+
+            <p className="text-center text-[10px] text-ink-muted px-10">
+                Après la réinitialisation, l'application sera automatiquement rafraîchie pour refléter l'état initial.
+            </p>
+        </div>
     );
 }

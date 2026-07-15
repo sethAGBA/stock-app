@@ -38,13 +38,18 @@ service cloud.firestore {
       return isAdmin() || docMagasinId == null || myMagasinId() == docMagasinId;
     }
 
+    function hasActiveLicense() {
+      let config = get(/databases/$(database)/documents/configurations/default).data;
+      return config.licenseExpiryDate > request.time;
+    }
+
     // ── Produits ──
     match /produits/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
       // Création réservée aux gestionnaires et admins
-      allow create: if isGestionnaire() && canAccessStore(request.resource.data);
+      allow create: if isGestionnaire() && canAccessStore(request.resource.data) && hasActiveLicense();
       // Modification du stock possible par vendeurs, gestionnaires et admins
-      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data);
+      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data) && hasActiveLicense();
       allow delete: if isAdmin();
     }
 
@@ -52,32 +57,32 @@ service cloud.firestore {
     match /mouvements/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
       // Enregistrement de vente/réception par vendeurs ou gestionnaires
-      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data);
+      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data) && hasActiveLicense();
       allow update, delete: if isAdmin();
     }
 
     // ── Catégories ──
     match /categories/{id} {
       allow read: if isAuth();
-      allow write: if isGestionnaire();
+      allow write: if isGestionnaire() && hasActiveLicense();
     }
 
     // ── Unités ──
     match /unites/{id} {
       allow read: if isAuth();
-      allow write: if isGestionnaire();
+      allow write: if isGestionnaire() && hasActiveLicense();
     }
 
     // ── Configurations (Établissement) ──
     match /configurations/{id} {
       allow read: if isAuth();
-      allow write: if isGestionnaire();
+      allow write: if isAdmin();
     }
 
     // ── Fournisseurs ──
     match /fournisseurs/{id} {
       allow read: if isAuth();
-      allow write: if isGestionnaire();
+      allow write: if isGestionnaire() && hasActiveLicense();
     }
 
     // ── Utilisateurs ──
@@ -91,31 +96,39 @@ service cloud.firestore {
     // ── Clients ──
     match /clients/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isVendeur() && canAccessStore(request.resource.data);
-      allow update: if isVendeur() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
+      allow update: if isVendeur() && canAccessStore(resource.data) && hasActiveLicense();
       allow delete: if isAdmin();
+    }
+
+    // ── Versements de dette ──
+    match /versements_dette/{id} {
+      allow read: if isAuth() && canAccessStore(resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
+      allow update: if isGestionnaire() && canAccessStore(resource.data) && hasActiveLicense();
+      allow delete: if false;
     }
 
     // ── Ventes ──
     match /ventes/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isVendeur() && canAccessStore(request.resource.data);
-      allow update: if isAdmin() || (isVendeur() && canAccessStore(resource.data));
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
+      allow update: if isAdmin() || (isVendeur() && canAccessStore(resource.data) && hasActiveLicense());
       allow delete: if isAdmin();
     }
 
     // ── Retours ──
     match /retours_client/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
       allow update, delete: if isAdmin();
     }
 
     // ── Commandes Fournisseurs ──
     match /commandes_fournisseurs/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isGestionnaire() && canAccessStore(request.resource.data);
-      allow update: if isGestionnaire() && canAccessStore(resource.data);
+      allow create: if isGestionnaire() && canAccessStore(request.resource.data) && hasActiveLicense();
+      allow update: if isGestionnaire() && canAccessStore(request.resource.data) && hasActiveLicense();
       allow delete: if isAdmin();
     }
 
@@ -129,22 +142,22 @@ service cloud.firestore {
     // ── Clôtures de Caisse ──
     match /clotures_caisse/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
       allow update, delete: if isAdmin();
     }
 
     // ── Inventaires ──
     match /inventaires/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data);
-      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data);
+      allow create: if (isGestionnaire() || isVendeur()) && canAccessStore(request.resource.data) && hasActiveLicense();
+      allow update: if (isGestionnaire() || isVendeur()) && canAccessStore(resource.data) && hasActiveLicense();
       allow delete: if isAdmin();
     }
 
     // ── Sorties de Caisse ──
     match /sorties_caisse/{id} {
       allow read: if isAuth() && canAccessStore(resource.data);
-      allow create: if isVendeur() && canAccessStore(request.resource.data);
+      allow create: if isVendeur() && canAccessStore(request.resource.data) && hasActiveLicense();
       allow update, delete: if isAdmin();
     }
 
@@ -152,6 +165,12 @@ service cloud.firestore {
     match /magasins/{id} {
       allow read: if isAuth();
       allow create, update, delete: if isAdmin();
+    }
+
+    // ── Licences (Clés) ──
+    match /licences/{id} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
     }
   }
 }

@@ -34,21 +34,53 @@ export default function RapportsPage() {
       ]);
 
       const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+
+      // En-tête de l'établissement
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.setTextColor(30, 30, 30);
+      const nomEtab = etablissement?.nom || "TogoStock";
+      doc.text(nomEtab.toUpperCase(), 14, 20);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      let yPos = 26;
+
+      const details = [];
+      if (etablissement?.adresse) details.push(etablissement.adresse);
+      if (etablissement?.telephone) details.push(`Tél: ${etablissement.telephone}`);
+      if (etablissement?.email) details.push(`Email: ${etablissement.email}`);
+
+      const detailsStr = details.join("  •  ");
+      doc.text(detailsStr, 14, yPos);
+      yPos += 2;
+
+      // Ligne de séparation
+      doc.setDrawColor(184, 147, 90); // Gold color
+      doc.setLineWidth(0.5);
+      doc.line(14, yPos + 2, pageWidth - 14, yPos + 2);
+
+      // Titre du rapport
       doc.setFont("helvetica", "bold");
       doc.setFontSize(18);
-      doc.text("Rapport des Mouvements de Stock", 14, 20);
+      doc.setTextColor(184, 147, 90);
+      doc.text("RAPPORT DE STOCK", pageWidth / 2, yPos + 15, { align: "center" });
+
+      // Infos Rapport
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
-      doc.setTextColor(120);
-      doc.text(`Période : ${format(debut, "dd/MM/yyyy")} — ${format(fin, "dd/MM/yyyy")}`, 14, 30);
-      doc.text(`Généré le : ${format(new Date(), "dd/MM/yyyy à HH:mm")}`, 14, 36);
+      doc.setTextColor(80, 80, 80);
+      doc.text(`Période : ${format(debut, "dd/MM/yyyy")} — ${format(fin, "dd/MM/yyyy")}`, pageWidth / 2, yPos + 22, { align: "center" });
 
-      const nomEtablissement = etablissement?.nom || "Vision+ Consulting";
-      doc.text(`${nomEtablissement} — TogoStock`, 14, 42);
+      doc.setFontSize(8);
+      doc.setTextColor(150, 150, 150);
+      doc.text(`Document généré le ${format(new Date(), "dd/MM/yyyy à HH:mm")}`, pageWidth - 14, 20, { align: "right" });
 
       autoTable(doc, {
-        startY: 50,
-        head: [["Date", "Produit", "Type", "Quantité", "Stock avant", "Stock après", "Motif"]],
+        startY: yPos + 30,
+        head: [["Date", "Article", "Action", "Qté", "S. Initial", "S. Final", "Motif"]],
         body: mouvements.map(m => [
           format(m.createdAt, "dd/MM/yy HH:mm"),
           m.produitNom,

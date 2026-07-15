@@ -7,8 +7,9 @@ import { useAuth } from "@/lib/auth-context";
 import { UserPlus, Mail, Shield, CheckCircle2, XCircle, Search, Edit2, Key, Trash2, Store } from "lucide-react";
 import toast from "react-hot-toast";
 import { initializeApp, getApps, deleteApp } from "firebase/app";
-import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
+import { getAuth, createUserWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth";
 import clsx from "clsx";
+import { ConfirmationModal } from "@/components/common/ConfirmationModal";
 
 // On récupère la config pour l'auth secondaire
 const firebaseConfig = {
@@ -26,6 +27,12 @@ export default function UtilisateursPage() {
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
+  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+
+  // Pour la suppression
+  const [userToDelete, setUserToDelete] = useState<AppUser | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const [form, setForm] = useState({
     nom: "", prenom: "", email: "", password: "", role: "vendeur" as UserRole, magasinId: ""
@@ -47,38 +54,68 @@ export default function UtilisateursPage() {
     }
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
+  const handleOpenCreate = () => {
+    setEditingUser(null);
+    setForm({ nom: "", prenom: "", email: "", password: "", role: "vendeur", magasinId: "" });
+    setShowModal(true);
+  };
+
+  const handleOpenEdit = (user: AppUser) => {
+    setEditingUser(user);
+    setForm({
+      nom: user.nom,
+      prenom: user.prenom,
+      email: user.email,
+      password: "", // On ne remplit pas le mot de passe pour l'edit
+      role: user.role,
+      magasinId: user.magasinId || ""
+    });
+    setShowModal(true);
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setModalLoading(true);
 
-    let secondaryApp;
     try {
-      // Trick : Initialiser une app secondaire pour créer l'utilisateur sans déconnecter l'admin
-      const appName = `secondary-${Date.now()}`;
-      secondaryApp = initializeApp(firebaseConfig, appName);
-      const secondaryAuth = getAuth(secondaryApp);
+      if (editingUser) {
+        // Mode Edition
+        await utilisateursService.update(editingUser.uid, {
+          nom: form.nom,
+          prenom: form.prenom,
+          role: form.role,
+          magasinId: form.magasinId || null,
+        }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+        toast.success("Utilisateur mis à jour");
+      } else {
+        // Mode Création
+        let secondaryApp;
+        try {
+          const appName = `secondary-${Date.now()}`;
+          secondaryApp = initializeApp(firebaseConfig, appName);
+          const secondaryAuth = getAuth(secondaryApp);
+          const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
 
-      // 1. Créer le compte Auth
-      const cred = await createUserWithEmailAndPassword(secondaryAuth, form.email, form.password);
+          await utilisateursService.create(cred.user.uid, {
+            nom: form.nom,
+            prenom: form.prenom,
+            email: form.email,
+            role: form.role,
+            magasinId: form.magasinId || null,
+            actif: true,
+          }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
+          toast.success("Utilisateur créé avec succès");
+        } finally {
+          if (secondaryApp) await deleteApp(secondaryApp);
+        }
+      }
 
-      // 2. Créer le profil Firestore
-      await utilisateursService.create(cred.user.uid, {
-        nom: form.nom,
-        prenom: form.prenom,
-        email: form.email,
-        role: form.role,
-        magasinId: form.magasinId || null,
-        actif: true,
-      }, { uid: appUser!.uid, nom: `${appUser!.prenom} ${appUser!.nom}` });
-
-      toast.success("Utilisateur créé avec succès");
       setShowModal(false);
       setForm({ nom: "", prenom: "", email: "", password: "", role: "vendeur", magasinId: "" });
       fetchUsers();
     } catch (err: any) {
-      toast.error(err.message || "Erreur lors de la création");
+      toast.error(err.message || "Erreur lors de l'enregistrement");
     } finally {
-      if (secondaryApp) await deleteApp(secondaryApp);
       setModalLoading(false);
     }
   };
@@ -93,10 +130,53 @@ export default function UtilisateursPage() {
     }
   };
 
-  const filtered = utilisateurs.filter(u =>
-    u.nom.toLowerCase().includes(search.toLowerCase()) ||
-    u.prenom.toLowerCase().includes(search.toLowerCase()) ||
-    u.email.toLowerCase().includes(search.toLowerCase())
+  const handleResetPassword = async (email: string) => {
+    if (!confirm("Envoyer un email de réinitialisation de mot de passe à cet utilisateur ?")) return;
+
+    try {
+      const auth = getAuth();
+      await sendPasswordResetEmail(auth, email);
+      toast.success("Email de réinitialisation envoyé !");
+    } catch (err: any) {
+      toast.error(err.message || "Erreur lors de l'envoi de l'email");
+    }
+  };
+
+  const handleDeleteUser = async (user: AppUser) => {
+    if (user.uid === appUser?.uid) {
+      toast.error("Vous ne pouvez pas supprimer votre propre compte !");
+      return;
+    }
+    setUserToDelete(user);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!userToDelete) return;
+    setDeleteLoading(true);
+
+    try {
+      await utilisateursService.delete(userToDelete.uid, {
+        uid: appUser!.uid,
+        nom: `${appUser!.prenom} ${appUser!.nom}`
+      });
+      toast.success("Utilisateur supprimé");
+      setIsDeleteModalOpen(false);
+      setUserToDelete(null);
+      fetchUsers();
+    } catch (err) {
+      toast.error("Erreur lors de la suppression");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const filtered = utilisateurs.filter(u => 
+    !u.isSuperAdmin && (
+      u.nom.toLowerCase().includes(search.toLowerCase()) ||
+      u.prenom.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase())
+    )
   );
 
   return (
@@ -110,7 +190,7 @@ export default function UtilisateursPage() {
             <p className="text-sm text-ink-muted mt-1">Gérez les accès et les rôles de vos collaborateurs.</p>
           </div>
 
-          <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+          <button onClick={handleOpenCreate} className="btn-primary flex items-center gap-2">
             <UserPlus size={18} /> Nouvel utilisateur
           </button>
         </div>
@@ -186,8 +266,26 @@ export default function UtilisateursPage() {
                       <Shield size={16} />
                     </button>
                     {/* Pour l'UI, on met des boutons placeholders pour edit/delete */}
-                    <button className="p-2 hover:bg-cream rounded-lg transition-colors text-ink-muted">
+                    <button
+                      onClick={() => handleResetPassword(user.email)}
+                      className="p-2 hover:bg-cream rounded-lg transition-colors text-ink-muted"
+                      title="Réinitialiser le mot de passe"
+                    >
+                      <Key size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleOpenEdit(user)}
+                      className="p-2 hover:bg-cream rounded-lg transition-colors text-ink-muted"
+                      title="Modifier"
+                    >
                       <Edit2 size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteUser(user)}
+                      className="p-2 hover:bg-red-50 rounded-lg transition-colors text-red-500"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
@@ -201,12 +299,14 @@ export default function UtilisateursPage() {
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
               <div className="p-6 border-b border-cream-dark bg-cream/30 flex items-center justify-between">
-                <h3 className="font-display font-semibold text-xl">Nouvel Utilisateur</h3>
+                <h3 className="font-display font-semibold text-xl">
+                  {editingUser ? "Modifier l'Utilisateur" : "Nouvel Utilisateur"}
+                </h3>
                 <button onClick={() => setShowModal(false)} className="p-2 hover:bg-cream rounded-full text-ink-muted">
                   <XCircle size={20} />
                 </button>
               </div>
-              <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+              <form onSubmit={handleSaveUser} className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Prénom</label>
@@ -217,14 +317,18 @@ export default function UtilisateursPage() {
                     <input required className="input" placeholder="Lavoine" value={form.nom} onChange={e => setForm({ ...form, nom: e.target.value })} />
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Email</label>
-                  <input type="email" required className="input" placeholder="marc@vision.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Mot de passe provisoire</label>
-                  <input type="password" required minLength={6} className="input" placeholder="••••••••" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
-                </div>
+                {!editingUser && (
+                  <>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Email</label>
+                      <input type="email" required className="input" placeholder="marc@vision.com" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Mot de passe provisoire</label>
+                      <input type="password" required minLength={6} className="input" placeholder="••••••••" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                    </div>
+                  </>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-[10px] font-bold uppercase text-ink-muted px-1">Rôle</label>
                   <select className="input" value={form.role} onChange={e => setForm({ ...form, role: e.target.value as UserRole })}>
@@ -245,12 +349,24 @@ export default function UtilisateursPage() {
                   <p className="text-[9px] text-ink-muted italic px-1 mt-1">Obligatoire pour les Vendeurs et Gestionnaires.</p>
                 </div>
                 <button type="submit" disabled={modalLoading} className="w-full btn-primary py-3 mt-4">
-                  {modalLoading ? "Création en cours..." : "Créer le compte"}
+                  {modalLoading ? "Enregistrement..." : (editingUser ? "Mettre à jour" : "Créer le compte")}
                 </button>
               </form>
             </div>
           </div>
         )}
+
+        {/* Confirmation de suppression */}
+        <ConfirmationModal
+          isOpen={isDeleteModalOpen}
+          onClose={() => setIsDeleteModalOpen(false)}
+          onConfirm={confirmDelete}
+          isLoading={deleteLoading}
+          title="Supprimer l'accès"
+          message={`Voulez-vous vraiment supprimer définitivement le profil de ${userToDelete?.prenom} ${userToDelete?.nom} ? Toutes ses affectations seront retirées.`}
+          confirmLabel="Supprimer définitivement"
+          variant="danger"
+        />
       </div>
     </AppLayout>
   );
